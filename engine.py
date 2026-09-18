@@ -63,7 +63,7 @@ def calculate_baseline(df):
     return df
 
 def summarize_baseline(df):
-    """Calculates summary metrics broken down by Peak and Off-Peak windows."""
+    """Calculates summary metrics and explicit rates applied for Peak and Off-Peak windows."""
     if df.empty:
         return {}
     
@@ -78,6 +78,10 @@ def summarize_baseline(df):
     offpeak_cost = df.loc[offpeak_mask, 'cost_baseline'].sum(skipna=True)
     total_cost = df['cost_baseline'].sum(skipna=True)
 
+    # Distinct rates used in mapped dataset
+    peak_rates = sorted(df.loc[peak_mask, 'import_rate'].dropna().unique())
+    offpeak_rates = sorted(df.loc[offpeak_mask, 'import_rate'].dropna().unique())
+
     return {
         "total_kwh": total_kwh,
         "peak_kwh": peak_kwh,
@@ -86,8 +90,8 @@ def summarize_baseline(df):
         "peak_cost": peak_cost,
         "offpeak_cost": offpeak_cost,
         "effective_rate": total_cost / total_kwh if total_kwh > 0 else 0,
-        "peak_effective_rate": peak_cost / peak_kwh if peak_kwh > 0 else 0,
-        "offpeak_effective_rate": offpeak_cost / offpeak_kwh if offpeak_kwh > 0 else 0,
+        "peak_rates": peak_rates,
+        "offpeak_rates": offpeak_rates,
     }
 
 if __name__ == "__main__":
@@ -99,7 +103,7 @@ if __name__ == "__main__":
         
         print(f"Processed {len(df)} rows.")
         print(f"Total Usage:    {summary['total_kwh']:,.1f} kWh | Cost: ${summary['total_cost']:,.2f}")
-        print(f"Peak Usage:     {summary['peak_kwh']:,.1f} kWh | Cost: ${summary['peak_cost']:,.2f}")
-        print(f"Off-Peak Usage: {summary['offpeak_kwh']:,.1f} kWh | Cost: ${summary['offpeak_cost']:,.2f}")
+        print(f"Peak Usage:     {summary['peak_kwh']:,.1f} kWh | Cost: ${summary['peak_cost']:,.2f} | Rates Used: {summary['peak_rates']}")
+        print(f"Off-Peak Usage: {summary['offpeak_kwh']:,.1f} kWh | Cost: ${summary['offpeak_cost']:,.2f} | Rates Used: {summary['offpeak_rates']}")
     else:
         print("No data found in database. Run db.py first.")
