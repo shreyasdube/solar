@@ -16,12 +16,13 @@ def load_energy_data(db_path=DB_PATH):
     
     conn = sqlite3.connect(db_path)
     query = """
-    SELECT timestamp, consumed_wh, produced_wh, imported_wh, exported_wh, import_rate, export_rate, is_peak 
+    SELECT timestamp, consumed_wh, produced_wh, imported_wh, exported_wh, stored_wh, discharged_wh, import_rate, export_rate, is_peak 
     FROM enphase_energy_data
     """
     try:
         df = pd.read_sql(query, conn)
     except Exception:
+        # Fallback if columns differ
         df = pd.read_sql("SELECT * FROM enphase_energy_data", conn)
         
     conn.close()
@@ -44,6 +45,8 @@ def calculate_scenarios(df):
     df['Produced_kWh'] = df.get('produced_wh', 0) / 1000.0
     df['Imported_kWh'] = df.get('imported_wh', 0) / 1000.0
     df['Exported_kWh'] = df.get('exported_wh', 0) / 1000.0
+    df['Stored_kWh'] = df.get('stored_wh', 0) / 1000.0
+    df['Discharged_kWh'] = df.get('discharged_wh', 0) / 1000.0
 
     # Baseline Cost (No solar, 100% grid import)
     df['cost_baseline'] = df['Consumed_kWh'] * df['import_rate']
@@ -53,11 +56,14 @@ def calculate_scenarios(df):
     df['credit_actual_export'] = df['Exported_kWh'] * df['export_rate']
     df['cost_actual_net'] = df['cost_actual_import'] - df['credit_actual_export']
 
-    # 2. Clean Solar-Only (No Battery) Simulation using true physical production
-    # Without a battery, production meets load first (instantaneous self-consumption).
-    # Deficit becomes imports; surplus becomes exports.
-    df['Solar_Only_Import_kWh'] = (df['Consumed_kWh'] - df['Produced_kWh']).clip(lower=0)
-    df['Solar_Only_Export_kWh'] = (df['Produced_kWh'] - df['Consumed_kWh']).clip(lower=0)
+    # 2. Solar Only (No Battery) Simulation via Battery Adjustment
+    # - Discharges: Energy pulled from the battery would have been imported from the grid.
+    df['Solar_Only_Import_kWh'] = df['Imported_kWh'] + df['Discharged_kWh']
+
+    # - Charging: Energy stored in the battery would have been exported to the grid 
+    #   ONLY if solar production was actively occurring during that interval.
+    solar_charging_kWh = np.where(df['Produced_kWh'] > 0, df['Stored_kWh'], 0.0)
+    df['Solar_Only_Export_kWh'] = df['Exported_kWh'] + solar_charging_kWh
 
     df['cost_solar_only_import'] = df['Solar_Only_Import_kWh'] * df['import_rate']
     df['credit_solar_only_export'] = df['Solar_Only_Export_kWh'] * df['export_rate']
