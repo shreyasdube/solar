@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 
 DB_PATH = "data/enphase.db"
-DATA_DIR = "data"
+DATA_DIR = "raw_reports"
 RATES_PATH = "rates_schedule.csv"
 
 def get_rates_df(rates_path=RATES_PATH):
