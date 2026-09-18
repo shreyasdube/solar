@@ -56,14 +56,11 @@ def calculate_scenarios(df):
     df['credit_actual_export'] = df['Exported_kWh'] * df['export_rate']
     df['cost_actual_net'] = df['cost_actual_import'] - df['credit_actual_export']
 
-    # 2. Solar Only (No Battery) Simulation via Battery Adjustment
-    # - Discharges: Energy pulled from the battery would have been imported from the grid.
-    df['Solar_Only_Import_kWh'] = df['Imported_kWh'] + df['Discharged_kWh']
-
-    # - Charging: Energy stored in the battery would have been exported to the grid 
-    #   ONLY if solar production was actively occurring during that interval.
-    solar_charging_kWh = np.where(df['Produced_kWh'] > 0, df['Stored_kWh'], 0.0)
-    df['Solar_Only_Export_kWh'] = df['Exported_kWh'] + solar_charging_kWh
+    # 2. Clean Solar Only (No Battery) Simulation via Instantaneous Physical Balance
+    # Without a battery, solar production meets home consumption first in each interval.
+    # Deficit = Grid Import; Surplus = Grid Export.
+    df['Solar_Only_Import_kWh'] = (df['Consumed_kWh'] - df['Produced_kWh']).clip(lower=0)
+    df['Solar_Only_Export_kWh'] = (df['Produced_kWh'] - df['Consumed_kWh']).clip(lower=0)
 
     df['cost_solar_only_import'] = df['Solar_Only_Import_kWh'] * df['import_rate']
     df['credit_solar_only_export'] = df['Solar_Only_Export_kWh'] * df['export_rate']
