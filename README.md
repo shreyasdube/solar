@@ -52,3 +52,11 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+## Dev Notes
+
+Verify DB has the right number of records
+
+```python
+python3 -c "import sqlite3; conn = sqlite3.connect('data/enphase.db'); count = conn.execute('SELECT count(*) FROM enphase_energy_data').fetchone()[0]; print(f'Total 15-min rows in database: {count}')"
+```
