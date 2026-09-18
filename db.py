@@ -14,8 +14,8 @@ def get_rates_df(rates_path=RATES_PATH):
         return pd.DataFrame()
     
     rates = pd.read_csv(rates_path)
-    rates['effective_start'] = pd.to_datetime(rates['effective_start'])
-    rates['effective_end'] = pd.to_datetime(rates['effective_end']) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    rates['effective_start'] = pd.to_datetime(rates['effective_start']).dt.tz_localize(None)
+    rates['effective_end'] = (pd.to_datetime(rates['effective_end']) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)).dt.tz_localize(None)
     return rates
 
 def apply_tariffs_to_df(df, rates_df):
@@ -57,10 +57,15 @@ def apply_tariffs_to_df(df, rates_df):
 def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
     """Ingests all CSV files in data_dir, maps rates, and updates SQLite."""
     rates_df = get_rates_df()
-    csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
     
-    # Exclude rates_schedule.csv from usage data ingestion
-    csv_files = [f for f in csv_files if not f.endswith("rates_schedule.csv")]
+    search_dirs = [data_dir, "data"]
+    csv_files = []
+    for d in search_dirs:
+        if os.path.exists(d):
+            csv_files.extend(glob.glob(os.path.join(d, "*.csv")))
+            csv_files.extend(glob.glob(os.path.join(d, "*.CSV")))
+    
+    csv_files = list(set([f for f in csv_files if not f.endswith("rates_schedule.csv")]))
     
     if not csv_files:
         print("No energy usage CSV files found to process.")
@@ -69,11 +74,10 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
     frames = []
     for f in csv_files:
         try:
-            # Enphase exports typically have header rows to skip or standard column names
             temp_df = pd.read_csv(f)
-            # Find timestamp column (e.g. 'Date/Time' or 'timestamp')
             ts_col = [c for c in temp_df.columns if 'date' in c.lower() or 'time' in c.lower()][0]
-            temp_df['timestamp'] = pd.to_datetime(temp_df[ts_col])
+            # Convert to datetime and strip timezone info
+            temp_df['timestamp'] = pd.to_datetime(temp_df[ts_col], utc=True).dt.tz_localize(None)
             frames.append(temp_df)
         except Exception as e:
             print(f"Skipping {f}: {e}")
@@ -83,7 +87,6 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
 
     raw_df = pd.concat(frames, ignore_index=True)
     
-    # Normalize column names to Wh standard
     col_map = {}
     for c in raw_df.columns:
         clow = c.lower()
@@ -94,10 +97,8 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
     raw_df = raw_df.rename(columns=col_map)
     raw_df = raw_df.sort_values('timestamp').drop_duplicates(subset=['timestamp'])
 
-    # Apply rates at ingestion
     processed_df = apply_tariffs_to_df(raw_df, rates_df)
     
-    # Ensure correct database column formatting
     db_df = pd.DataFrame({
         'timestamp': processed_df['timestamp'].astype(str),
         'consumed_wh': processed_df.get('consumed_wh', 0.0),
@@ -108,8 +109,8 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
         'is_peak': processed_df['is_peak'].astype(int)
     })
 
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
-    # Read existing table to merge/deduplicate if needed
     try:
         existing_df = pd.read_sql("SELECT * FROM enphase_energy_data", conn)
         combined = pd.concat([existing_df, db_df], ignore_index=True)
