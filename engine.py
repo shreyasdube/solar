@@ -88,11 +88,11 @@ def calculate_actual_bill(df):
     
     return df
 
-def summarize_actual_vs_baseline(df):
-    """Summarizes financial baseline vs actual net bill metrics by Peak and Off-Peak."""
+def summarize_slice(df):
+    """Helper to compute aggregated metrics for a given subset (single month or overall)."""
     if df.empty:
         return {}
-    
+
     peak_mask = df['is_peak'] == True
     offpeak_mask = df['is_peak'] == False
 
@@ -101,19 +101,16 @@ def summarize_actual_vs_baseline(df):
     actual_export_credit = df['credit_actual_export'].sum(skipna=True)
     actual_net_cost = df['cost_actual_net'].sum(skipna=True)
 
-    # Detailed Peak Breakdown
     peak_import_kwh = df.loc[peak_mask, 'Imported_kWh'].sum()
     peak_import_cost = df.loc[peak_mask, 'cost_actual_import'].sum(skipna=True)
     peak_export_kwh = df.loc[peak_mask, 'Exported_kWh'].sum()
     peak_export_credit = df.loc[peak_mask, 'credit_actual_export'].sum(skipna=True)
 
-    # Detailed Off-Peak Breakdown
     offpeak_import_kwh = df.loc[offpeak_mask, 'Imported_kWh'].sum()
     offpeak_import_cost = df.loc[offpeak_mask, 'cost_actual_import'].sum(skipna=True)
     offpeak_export_kwh = df.loc[offpeak_mask, 'Exported_kWh'].sum()
     offpeak_export_credit = df.loc[offpeak_mask, 'credit_actual_export'].sum(skipna=True)
 
-    # Rates Arrays
     import_peak_rates = [float(r) for r in sorted(df.loc[peak_mask, 'import_rate'].dropna().unique())]
     import_offpeak_rates = [float(r) for r in sorted(df.loc[offpeak_mask, 'import_rate'].dropna().unique())]
     export_peak_rates = [float(r) for r in sorted(df.loc[peak_mask, 'export_rate'].dropna().unique())]
@@ -129,14 +126,12 @@ def summarize_actual_vs_baseline(df):
         "actual_net_cost": actual_net_cost,
         "total_savings": baseline_cost - actual_net_cost,
         "savings_pct": ((baseline_cost - actual_net_cost) / baseline_cost * 100) if baseline_cost > 0 else 0,
-        # Peak Details
         "peak_import_kwh": peak_import_kwh,
         "peak_import_cost": peak_import_cost,
         "peak_export_kwh": peak_export_kwh,
         "peak_export_credit": peak_export_credit,
         "import_peak_rates": import_peak_rates,
         "export_peak_rates": export_peak_rates,
-        # Off-Peak Details
         "offpeak_import_kwh": offpeak_import_kwh,
         "offpeak_import_cost": offpeak_import_cost,
         "offpeak_export_kwh": offpeak_export_kwh,
@@ -145,6 +140,23 @@ def summarize_actual_vs_baseline(df):
         "export_offpeak_rates": export_offpeak_rates,
     }
 
+def summarize_actual_vs_baseline(df):
+    """Summarizes financial baseline vs actual net bill metrics overall and per month."""
+    if df.empty:
+        return {}
+
+    overall_summary = summarize_slice(df)
+    
+    # Monthly Breakdown
+    df['Month_Period'] = df['Date/Time'].dt.to_period('M')
+    monthly_summaries = {}
+    
+    for month, group in df.groupby('Month_Period'):
+        monthly_summaries[str(month)] = summarize_slice(group)
+
+    overall_summary['monthly'] = monthly_summaries
+    return overall_summary
+
 if __name__ == "__main__":
     df = load_energy_data()
     if not df.empty:
@@ -152,15 +164,22 @@ if __name__ == "__main__":
         df = calculate_actual_bill(df)
         summary = summarize_actual_vs_baseline(df)
         
-        print(f"Processed {len(df)} rows.")
+        print(f"Processed {len(df)} rows across {len(summary['monthly'])} month(s).\n")
+        
+        # Print Monthly Summaries
+        for month, m_summary in summary['monthly'].items():
+            print(f"==================== MONTH: {month} ====================")
+            print(f"Baseline Cost:         ${m_summary['baseline_cost']:,.2f}")
+            print(f"Actual Net Bill:       ${m_summary['actual_net_cost']:,.2f} (Savings: ${m_summary['total_savings']:,.2f})")
+            print("ON-PEAK:")
+            print(f"  Imports: {m_summary['peak_import_kwh']:,.1f} kWh | Cost: ${m_summary['peak_import_cost']:,.2f}")
+            print(f"  Exports: {m_summary['peak_export_kwh']:,.1f} kWh | Credit: ${m_summary['peak_export_credit']:,.2f}")
+            print("OFF-PEAK:")
+            print(f"  Imports: {m_summary['offpeak_import_kwh']:,.1f} kWh | Cost: ${m_summary['offpeak_import_cost']:,.2f}")
+            print(f"  Exports: {m_summary['offpeak_export_kwh']:,.1f} kWh | Credit: ${m_summary['offpeak_export_credit']:,.2f}\n")
+        
+        print("==================== OVERALL TOTAL ====================")
         print(f"Baseline Cost:         ${summary['baseline_cost']:,.2f}")
         print(f"Actual Net Bill:       ${summary['actual_net_cost']:,.2f} (Savings: ${summary['total_savings']:,.2f})")
-        print("-" * 50)
-        print("ON-PEAK BREAKDOWN:")
-        print(f"  Imports: {summary['peak_import_kwh']:,.1f} kWh | Cost: ${summary['peak_import_cost']:,.2f} | Rates: {summary['import_peak_rates']}")
-        print(f"  Exports: {summary['peak_export_kwh']:,.1f} kWh | Credit: ${summary['peak_export_credit']:,.2f} | Rates: {summary['export_peak_rates']}")
-        print("OFF-PEAK BREAKDOWN:")
-        print(f"  Imports: {summary['offpeak_import_kwh']:,.1f} kWh | Cost: ${summary['offpeak_offpeak_cost'] if 'offpeak_offpeak_cost' in summary else summary['offpeak_import_cost']:,.2f} | Rates: {summary['import_offpeak_rates']}")
-        print(f"  Exports: {summary['offpeak_export_kwh']:,.1f} kWh | Credit: ${summary['offpeak_export_credit']:,.2f} | Rates: {summary['export_offpeak_rates']}")
     else:
         print("No data found in database. Run db.py first.")
