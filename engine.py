@@ -56,7 +56,7 @@ def load_energy_data(db_path=DB_PATH):
     return df
 
 def calculate_scenarios(df):
-    """Calculates Baseline, Solar Only (No Battery), and Solar + Battery (Actual) bills."""
+    """Calculates Baseline, Solar Only, Battery Only, and Solar + Battery bills."""
     if df.empty:
         return df
     
@@ -82,6 +82,17 @@ def calculate_scenarios(df):
     df['cost_solar_only_import'] = df['Solar_Only_Import_kWh'] * df['import_rate']
     df['credit_solar_only_export'] = df['Solar_Only_Export_kWh'] * df['export_rate']
     df['cost_solar_only_net'] = df['cost_solar_only_import'] - df['credit_solar_only_export']
+
+    # Battery Only Simulation (No Solar, Arbitrage Only)
+    # During peak hours, battery discharges to offset load up to actual historical discharge capacity.
+    # Remaining deficit is imported at peak rate. Off-peak uses standard consumption import.
+    df['Battery_Only_Discharged_kWh'] = np.where(df['is_peak'], df['Discharged_kWh'], 0.0)
+    df['Battery_Only_Import_kWh'] = np.where(
+        df['is_peak'],
+        (df['Consumed_kWh'] - df['Battery_Only_Discharged_kWh']).clip(lower=0),
+        df['Consumed_kWh']
+    )
+    df['cost_battery_only'] = df['Battery_Only_Import_kWh'] * df['import_rate']
     
     return df
 
@@ -95,9 +106,11 @@ def summarize_slice(df):
 
     baseline_cost = df['cost_baseline'].sum(skipna=True)
     solar_only_net_cost = df['cost_solar_only_net'].sum(skipna=True)
+    battery_only_net_cost = df['cost_battery_only'].sum(skipna=True)
     actual_net_cost = df['cost_actual_net'].sum(skipna=True)
 
     solar_only_savings = baseline_cost - solar_only_net_cost
+    battery_only_savings = baseline_cost - battery_only_net_cost
     battery_added_savings = solar_only_net_cost - actual_net_cost
     total_savings = baseline_cost - actual_net_cost
 
@@ -119,6 +132,10 @@ def summarize_slice(df):
     combined_roi_pct = (annual_total_savings / combined_system_cost) * 100 if combined_system_cost > 0 else 0
     combined_payback_yrs = combined_system_cost / annual_total_savings if annual_total_savings > 0 else float('inf')
 
+    battery_only_annual_savings = battery_only_savings * annualizer
+    battery_only_roi_pct = (battery_only_annual_savings / BATTERY_SYSTEM_COST) * 100 if BATTERY_SYSTEM_COST > 0 else 0
+    battery_only_payback_yrs = BATTERY_SYSTEM_COST / battery_only_annual_savings if battery_only_annual_savings > 0 else float('inf')
+
     peak_import_kwh = df.loc[peak_mask, 'Imported_kWh'].sum()
     peak_import_cost = df.loc[peak_mask, 'cost_actual_import'].sum()
     peak_export_kwh = df.loc[peak_mask, 'Exported_kWh'].sum()
@@ -139,10 +156,17 @@ def summarize_slice(df):
     offpeak_so_export_kwh = df.loc[offpeak_mask, 'Solar_Only_Export_kWh'].sum()
     offpeak_so_export_credit = df.loc[offpeak_mask, 'credit_solar_only_export'].sum()
 
+    peak_bo_import_kwh = df.loc[peak_mask, 'Battery_Only_Import_kWh'].sum()
+    peak_bo_import_cost = df.loc[peak_mask, 'cost_battery_only'].sum()
+
     return {
         "consumed_kwh": df['Consumed_kWh'].sum(),
         "baseline_cost": baseline_cost,
         "solar_only_net_cost": solar_only_net_cost,
+        "battery_only_net_cost": battery_only_net_cost,
+        "battery_only_savings": battery_only_savings,
+        "battery_only_roi_pct": battery_only_roi_pct,
+        "battery_only_payback_yrs": battery_only_payback_yrs,
         "solar_only_savings": solar_only_savings,
         "actual_net_cost": actual_net_cost,
         "total_savings": total_savings,
@@ -169,10 +193,12 @@ def summarize_slice(df):
         "offpeak_so_import_cost": offpeak_so_import_cost,
         "offpeak_so_export_kwh": offpeak_so_export_kwh,
         "offpeak_so_export_credit": offpeak_so_export_credit,
+        "peak_bo_import_kwh": peak_bo_import_kwh,
+        "peak_bo_import_cost": peak_bo_import_cost,
     }
 
 def summarize_actual_vs_baseline(df):
-    """Summarizes baseline, solar-only, and solar+battery metrics overall and per month."""
+    """Summarizes baseline, solar-only, battery-only, and solar+battery metrics overall and per month."""
     if df.empty:
         return {}
 
