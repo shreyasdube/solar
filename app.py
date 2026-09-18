@@ -64,25 +64,29 @@ else:
     st.markdown("---")
     st.subheader("Hourly Electricity Consumption (Peak vs. Off-Peak)")
 
-    # Map boolean to readable string for legibility in chart legend
+    # Floor timestamps to hourly buckets while preserving rate window status
+    df['Hourly_Timestamp'] = df['Date/Time'].dt.floor('h')
     df['Rate Window'] = df['is_peak'].map({True: 'On-Peak', False: 'Off-Peak'})
 
-    # Resample to hourly bins keeping the Rate Window grouping
+    # Aggregate 15-minute intervals into hourly sums per rate window
     hourly_df = (
-        df.groupby([pd.Grouper(key='Date/Time', freq='1h'), 'Rate Window'])['Consumed_kWh']
+        df.groupby(['Hourly_Timestamp', 'Rate Window'])['Consumed_kWh']
         .sum()
         .reset_index()
     )
 
     fig = px.bar(
         hourly_df,
-        x="Date/Time",
+        x="Hourly_Timestamp",
         y="Consumed_kWh",
         color="Rate Window",
         color_discrete_map={"On-Peak": "#EF553B", "Off-Peak": "#636efa"},
         title="Hourly Consumption Breakdown (kWh)",
-        labels={"Consumed_kWh": "Consumption (kWh)", "Date/Time": "Date & Time"},
+        labels={"Consumed_kWh": "Consumption (kWh)", "Hourly_Timestamp": "Date & Time"},
         barmode="stack"
     )
+
+    # Remove gaps between bars for clean rendering over multi-week spans
+    fig.update_layout(bargap=0)
 
     st.plotly_chart(fig, use_container_width=True)
