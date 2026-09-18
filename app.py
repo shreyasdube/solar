@@ -41,32 +41,43 @@ else:
 
     # Peak vs Off-Peak Detailed Breakdown
     st.markdown("---")
-    st.markdown("### Time-of-Use (TOU) Breakdown")
+    st.markdown("### Time-of-Use (TOU) Rate Verification")
     
     col_peak, col_offpeak = st.columns(2)
     
+    # Format rates lists for display
+    peak_rates_str = ", ".join([f"${r:.5f}" for r in summary['peak_rates']]) if summary['peak_rates'] else "None"
+    offpeak_rates_str = ", ".join([f"${r:.5f}" for r in summary['offpeak_rates']]) if summary['offpeak_rates'] else "None"
+
     with col_peak:
         st.markdown("🔴 **On-Peak**")
         st.metric("Peak Usage", f"{summary['peak_kwh']:,.1f} kWh")
         st.metric("Peak Cost", f"${summary['peak_cost']:,.2f}")
-        st.metric("Avg Peak Rate", f"${summary['peak_effective_rate']:.3f} / kWh")
+        st.caption(f"**Applied Tariff Rates:** {peak_rates_str}")
 
     with col_offpeak:
         st.markdown("🔵 **Off-Peak**")
         st.metric("Off-Peak Usage", f"{summary['offpeak_kwh']:,.1f} kWh")
         st.metric("Off-Peak Cost", f"${summary['offpeak_cost']:,.2f}")
-        st.metric("Avg Off-Peak Rate", f"${summary['offpeak_effective_rate']:.3f} / kWh")
+        st.caption(f"**Applied Tariff Rates:** {offpeak_rates_str}")
 
-    # Interactive Chart
+    # Interactive Hourly Chart
     st.markdown("---")
-    st.subheader("15-Minute Interval Usage")
+    st.subheader("Hourly Electricity Consumption")
+
+    # Resample 15-minute data into 1-hour intervals
+    hourly_df = (
+        df.set_index("Date/Time")
+        .resample("1h")["Consumed_kWh"]
+        .sum()
+        .reset_index()
+    )
+
     fig = px.line(
-        df, 
+        hourly_df, 
         x="Date/Time", 
         y="Consumed_kWh", 
-        color="is_peak",
-        color_discrete_map={True: "red", False: "blue"},
-        title="Consumption (Red = On-Peak Hours, Blue = Off-Peak Hours)",
-        labels={"Consumed_kWh": "Consumption (kWh)", "is_peak": "Peak Window"}
+        title="Hourly Usage (kWh)",
+        labels={"Consumed_kWh": "Consumption (kWh)", "Date/Time": "Date & Time"}
     )
     st.plotly_chart(fig, use_container_width=True)
