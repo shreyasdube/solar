@@ -1,63 +1,125 @@
 import os
-import glob
 import sqlite3
+import glob
 import pandas as pd
+import numpy as np
 
 DB_PATH = "data/enphase.db"
-RAW_REPORTS_DIR = "raw_reports"
+DATA_DIR = "data"
+RATES_PATH = "rates_schedule.csv"
 
-def init_db():
-    """Initializes the SQLite database and enphase_energy_data table if not present."""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS enphase_energy_data (
-            timestamp TEXT PRIMARY KEY,
-            produced_wh INTEGER,
-            consumed_wh INTEGER,
-            exported_wh INTEGER,
-            imported_wh INTEGER,
-            stored_battery_wh INTEGER,
-            discharged_battery_wh INTEGER
-        )
-    """)
-    conn.commit()
+def get_rates_df(rates_path=RATES_PATH):
+    """Loads and formats the rate schedule."""
+    if not os.path.exists(rates_path):
+        return pd.DataFrame()
+    
+    rates = pd.read_csv(rates_path)
+    rates['effective_start'] = pd.to_datetime(rates['effective_start'])
+    rates['effective_end'] = pd.to_datetime(rates['effective_end']) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+    return rates
+
+def apply_tariffs_to_df(df, rates_df):
+    """Maps tariffs directly onto the usage dataframe."""
+    df['import_rate'] = np.nan
+    df['export_rate'] = 0.0
+    df['is_peak'] = False
+    
+    if rates_df.empty or df.empty:
+        return df
+
+    for _, rate in rates_df.iterrows():
+        date_mask = (df['timestamp'] >= rate['effective_start']) & (df['timestamp'] <= rate['effective_end'])
+        
+        m = df['timestamp'].dt.month
+        if rate['start_month'] <= rate['end_month']:
+            season_mask = (m >= rate['start_month']) & (m <= rate['end_month'])
+        else:
+            season_mask = (m >= rate['start_month']) | (m <= rate['end_month'])
+            
+        combined_mask = date_mask & season_mask
+        h = df['timestamp'].dt.hour
+        peak_mask = combined_mask & (h >= rate['peak_start_hour']) & (h < rate['peak_end_hour'])
+        off_peak_mask = combined_mask & ~peak_mask
+        
+        df.loc[peak_mask, 'is_peak'] = True
+        df.loc[peak_mask, 'import_rate'] = rate['import_on_peak']
+        df.loc[off_peak_mask, 'import_rate'] = rate['import_off_peak']
+        
+        if 'export_on_peak' in rate and 'export_off_peak' in rate:
+            df.loc[peak_mask, 'export_rate'] = rate['export_on_peak']
+            df.loc[off_peak_mask, 'export_rate'] = rate['export_off_peak']
+        else:
+            df.loc[peak_mask, 'export_rate'] = rate['import_on_peak']
+            df.loc[off_peak_mask, 'export_rate'] = rate['import_off_peak']
+            
+    return df
+
+def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
+    """Ingests all CSV files in data_dir, maps rates, and updates SQLite."""
+    rates_df = get_rates_df()
+    csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
+    
+    # Exclude rates_schedule.csv from usage data ingestion
+    csv_files = [f for f in csv_files if not f.endswith("rates_schedule.csv")]
+    
+    if not csv_files:
+        print("No energy usage CSV files found to process.")
+        return
+
+    frames = []
+    for f in csv_files:
+        try:
+            # Enphase exports typically have header rows to skip or standard column names
+            temp_df = pd.read_csv(f)
+            # Find timestamp column (e.g. 'Date/Time' or 'timestamp')
+            ts_col = [c for c in temp_df.columns if 'date' in c.lower() or 'time' in c.lower()][0]
+            temp_df['timestamp'] = pd.to_datetime(temp_df[ts_col])
+            frames.append(temp_df)
+        except Exception as e:
+            print(f"Skipping {f}: {e}")
+
+    if not frames:
+        return
+
+    raw_df = pd.concat(frames, ignore_index=True)
+    
+    # Normalize column names to Wh standard
+    col_map = {}
+    for c in raw_df.columns:
+        clow = c.lower()
+        if 'consumed' in clow: col_map[c] = 'consumed_wh'
+        elif 'imported' in clow: col_map[c] = 'imported_wh'
+        elif 'exported' in clow: col_map[c] = 'exported_wh'
+    
+    raw_df = raw_df.rename(columns=col_map)
+    raw_df = raw_df.sort_values('timestamp').drop_duplicates(subset=['timestamp'])
+
+    # Apply rates at ingestion
+    processed_df = apply_tariffs_to_df(raw_df, rates_df)
+    
+    # Ensure correct database column formatting
+    db_df = pd.DataFrame({
+        'timestamp': processed_df['timestamp'].astype(str),
+        'consumed_wh': processed_df.get('consumed_wh', 0.0),
+        'imported_wh': processed_df.get('imported_wh', 0.0),
+        'exported_wh': processed_df.get('exported_wh', 0.0),
+        'import_rate': processed_df['import_rate'],
+        'export_rate': processed_df['export_rate'],
+        'is_peak': processed_df['is_peak'].astype(int)
+    })
+
+    conn = sqlite3.connect(db_path)
+    # Read existing table to merge/deduplicate if needed
+    try:
+        existing_df = pd.read_sql("SELECT * FROM enphase_energy_data", conn)
+        combined = pd.concat([existing_df, db_df], ignore_index=True)
+        combined = combined.drop_duplicates(subset=['timestamp'], keep='last')
+    except Exception:
+        combined = db_df
+
+    combined.to_sql("enphase_energy_data", conn, if_exists="replace", index=False)
     conn.close()
-
-def ingest_enphase_df(df):
-    """Parses an Enphase DataFrame and upserts rows into SQLite."""
-    df.columns = df.columns.str.strip()
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    rows = []
-    for _, r in df.iterrows():
-        rows.append((
-            str(r['Date/Time']),
-            int(r['Energy Produced (Wh)']),
-            int(r['Energy Consumed (Wh)']),
-            int(r['Exported to Grid (Wh)']),
-            int(r['Imported from Grid (Wh)']),
-            int(r['Stored in batteries (Wh)']),
-            int(r['Discharged from batteries (Wh)'])
-        ))
-    cursor.executemany("""
-        INSERT OR IGNORE INTO enphase_energy_data VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, rows)
-    conn.commit()
-    conn.close()
-
-def sync_raw_reports_folder():
-    """Scans raw_reports/ directory for CSVs and ingests them into SQLite."""
-    if os.path.exists(RAW_REPORTS_DIR):
-        csv_files = glob.glob(os.path.join(RAW_REPORTS_DIR, "*.csv"))
-        for f in csv_files:
-            try:
-                df = pd.read_csv(f)
-                ingest_enphase_df(df)
-            except Exception as e:
-                print(f"Skipping {f}: {e}")
+    print(f"Successfully updated {db_path}. Total records: {len(combined)}")
 
 if __name__ == "__main__":
-    init_db()
-    sync_raw_reports_folder()
-    print("Database synced successfully.")
+    ingest_csv_files()
