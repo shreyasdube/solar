@@ -76,8 +76,9 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
         try:
             temp_df = pd.read_csv(f)
             ts_col = [c for c in temp_df.columns if 'date' in c.lower() or 'time' in c.lower()][0]
+            
             # Convert to standard pandas datetime and strip timezone info
-            temp_df['timestamp'] = pd.to_datetime(temp_df[ts_col], format='ISO8601', errors='coerce')
+            temp_df['timestamp'] = pd.to_datetime(temp_df[ts_col], errors='coerce')
             if temp_df['timestamp'].dt.tz is not None:
                 temp_df['timestamp'] = temp_df['timestamp'].dt.tz_localize(None)
                 
@@ -91,12 +92,16 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
 
     raw_df = pd.concat(frames, ignore_index=True)
     
+    # Map Enphase report columns safely
     col_map = {}
     for c in raw_df.columns:
         clow = c.lower()
-        if 'consumed' in clow: col_map[c] = 'consumed_wh'
+        if 'produced' in clow: col_map[c] = 'produced_wh'
+        elif 'consumed' in clow: col_map[c] = 'consumed_wh'
         elif 'imported' in clow: col_map[c] = 'imported_wh'
         elif 'exported' in clow: col_map[c] = 'exported_wh'
+        elif 'stored' in clow: col_map[c] = 'stored_wh'
+        elif 'discharged' in clow: col_map[c] = 'discharged_wh'
     
     raw_df = raw_df.rename(columns=col_map)
     raw_df = raw_df.sort_values('timestamp').drop_duplicates(subset=['timestamp'])
@@ -107,8 +112,11 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
     db_df = pd.DataFrame({
         'timestamp': processed_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S'),
         'consumed_wh': processed_df.get('consumed_wh', 0.0),
+        'produced_wh': processed_df.get('produced_wh', 0.0),
         'imported_wh': processed_df.get('imported_wh', 0.0),
         'exported_wh': processed_df.get('exported_wh', 0.0),
+        'stored_wh': processed_df.get('stored_wh', 0.0),
+        'discharged_wh': processed_df.get('discharged_wh', 0.0),
         'import_rate': processed_df['import_rate'],
         'export_rate': processed_df['export_rate'],
         'is_peak': processed_df['is_peak'].astype(int)
