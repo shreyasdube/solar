@@ -78,9 +78,9 @@ def summarize_baseline(df):
     offpeak_cost = df.loc[offpeak_mask, 'cost_baseline'].sum(skipna=True)
     total_cost = df['cost_baseline'].sum(skipna=True)
 
-    # Distinct rates used in mapped dataset
-    peak_rates = sorted(df.loc[peak_mask, 'import_rate'].dropna().unique())
-    offpeak_rates = sorted(df.loc[offpeak_mask, 'import_rate'].dropna().unique())
+    # Cast numpy floats to native Python floats for clean output formatting
+    peak_rates = [float(r) for r in sorted(df.loc[peak_mask, 'import_rate'].dropna().unique())]
+    offpeak_rates = [float(r) for r in sorted(df.loc[offpeak_mask, 'import_rate'].dropna().unique())]
 
     return {
         "total_kwh": total_kwh,
