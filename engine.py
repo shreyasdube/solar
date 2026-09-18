@@ -160,7 +160,7 @@ if __name__ == "__main__":
         print(f"  Imports: {summary['peak_import_kwh']:,.1f} kWh | Cost: ${summary['peak_import_cost']:,.2f} | Rates: {summary['import_peak_rates']}")
         print(f"  Exports: {summary['peak_export_kwh']:,.1f} kWh | Credit: ${summary['peak_export_credit']:,.2f} | Rates: {summary['export_peak_rates']}")
         print("OFF-PEAK BREAKDOWN:")
-        print(f"  Imports: {summary['offpeak_import_kwh']:,.1f} kWh | Cost: ${summary['offpeak_import_cost']:,.2f} | Rates: {summary['import_offpeak_rates']}")
+        print(f"  Imports: {summary['offpeak_import_kwh']:,.1f} kWh | Cost: ${summary['offpeak_offpeak_cost'] if 'offpeak_offpeak_cost' in summary else summary['offpeak_import_cost']:,.2f} | Rates: {summary['import_offpeak_rates']}")
         print(f"  Exports: {summary['offpeak_export_kwh']:,.1f} kWh | Credit: ${summary['offpeak_export_credit']:,.2f} | Rates: {summary['export_offpeak_rates']}")
     else:
         print("No data found in database. Run db.py first.")
