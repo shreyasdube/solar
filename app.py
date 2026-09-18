@@ -1,18 +1,18 @@
 import streamlit as st
 import plotly.express as px
 import pandas as pd
-from engine import load_energy_data, apply_tariffs, calculate_baseline, summarize_baseline
+from engine import load_energy_data, apply_tariffs, calculate_actual_bill, summarize_actual_vs_baseline
 
 st.set_page_config(page_title="Belmont Energy Monitor", layout="wide")
 
-st.title("Belmont Energy & TOU Baseline Monitor")
+st.title("Belmont Energy: Baseline vs. Actual Bill Monitor")
 
 @st.cache_data
 def get_processed_data():
     df = load_energy_data()
     if not df.empty:
         df = apply_tariffs(df)
-        df = calculate_baseline(df)
+        df = calculate_actual_bill(df)
     return df
 
 df = get_processed_data()
@@ -20,69 +20,53 @@ df = get_processed_data()
 if df.empty:
     st.warning("No interval data loaded in SQLite database yet.")
 else:
-    # Check for missing rate coverage
-    unmatched_df = df[df['import_rate'].isna()]
-    if not unmatched_df.empty:
-        st.error(
-            f"⚠️ **{len(unmatched_df)} interval records** have no matching tariff in `rates_schedule.csv`! "
-            f"Missing dates from **{unmatched_df['Date/Time'].min().strftime('%Y-%m-%d')}** "
-            f"to **{unmatched_df['Date/Time'].max().strftime('%Y-%m-%d')}**."
-        )
-
-    summary = summarize_baseline(df)
+    summary = summarize_actual_vs_baseline(df)
 
     # Executive Summary Metrics
-    st.markdown("### Cost & Consumption Summary")
+    st.markdown("### 💰 Baseline vs. Actual Bill Comparison")
     
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Consumption", f"{summary['total_kwh']:,.1f} kWh")
-    c2.metric("Total Baseline Cost", f"${summary['total_cost']:,.2f}")
-    c3.metric("Effective Avg Rate", f"${summary['effective_rate']:.3f} / kWh")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Baseline TOU Cost", f"${summary['baseline_cost']:,.2f}")
+    c2.metric("Actual Net Grid Bill", f"${summary['actual_net_cost']:,.2f}")
+    c3.metric("Total Solar + Battery Savings", f"${summary['total_savings']:,.2f}", delta=f"{summary['savings_pct']:.1f}% Savings")
+    c4.metric("Grid Import Reduction", f"{summary['consumed_kwh'] - summary['imported_kwh']:,.1f} kWh")
 
-    # Peak vs Off-Peak Detailed Breakdown
+    # Generation & Storage Overview
     st.markdown("---")
-    st.markdown("### Time-of-Use (TOU) Rate Verification")
+    st.markdown("### ⚡ Solar & Battery Performance Summary")
     
-    col_peak, col_offpeak = st.columns(2)
-    
-    peak_rates_str = ", ".join([f"${r:.5f}" for r in summary['peak_rates']]) if summary['peak_rates'] else "None"
-    offpeak_rates_str = ", ".join([f"${r:.5f}" for r in summary['offpeak_rates']]) if summary['offpeak_rates'] else "None"
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Solar Produced", f"{summary['produced_kwh']:,.1f} kWh")
+    col2.metric("Battery Discharged", f"{summary['battery_discharged_kwh']:,.1f} kWh")
+    col3.metric("Exported to Grid", f"{summary['exported_kwh']:,.1f} kWh")
 
-    with col_peak:
-        st.markdown("🔴 **On-Peak**")
-        st.metric("Peak Usage", f"{summary['peak_kwh']:,.1f} kWh")
-        st.metric("Peak Cost", f"${summary['peak_cost']:,.2f}")
-        st.caption(f"**Applied Tariff Rates:** {peak_rates_str}")
-
-    with col_offpeak:
-        st.markdown("🔵 **Off-Peak**")
-        st.metric("Off-Peak Usage", f"{summary['offpeak_kwh']:,.1f} kWh")
-        st.metric("Off-Peak Cost", f"${summary['offpeak_cost']:,.2f}")
-        st.caption(f"**Applied Tariff Rates:** {offpeak_rates_str}")
-
-    # Daily Stacked Bar Chart
+    # Daily Stacked Bar Chart - Net Grid Import vs Solar/Battery Contribution
     st.markdown("---")
-    st.subheader("Daily Electricity Consumption (Peak vs. Off-Peak)")
+    st.subheader("Daily Energy Source Breakdown")
 
-    # Extract date for daily aggregation
     df['Date'] = df['Date/Time'].dt.date
-    df['Rate Window'] = df['is_peak'].map({True: 'On-Peak', False: 'Off-Peak'})
+    daily_df = df.groupby('Date')[['Imported_kWh', 'Produced_kWh', 'Battery_Discharge_kWh']].sum().reset_index()
 
-    # Group by calendar date and rate window
-    daily_df = (
-        df.groupby(['Date', 'Rate Window'])['Consumed_kWh']
-        .sum()
-        .reset_index()
+    daily_melted = pd.melt(
+        daily_df, 
+        id_vars=['Date'], 
+        value_vars=['Imported_kWh', 'Produced_kWh', 'Battery_Discharge_kWh'],
+        var_name='Source', 
+        value_name='kWh'
     )
+    daily_melted['Source'] = daily_melted['Source'].map({
+        'Imported_kWh': 'Grid Import',
+        'Produced_kWh': 'Solar Production',
+        'Battery_Discharge_kWh': 'Battery Discharge'
+    })
 
     fig = px.bar(
-        daily_df,
+        daily_melted,
         x="Date",
-        y="Consumed_kWh",
-        color="Rate Window",
-        color_discrete_map={"On-Peak": "#EF553B", "Off-Peak": "#636efa"},
-        title="Daily Consumption Breakdown (kWh)",
-        labels={"Consumed_kWh": "Consumption (kWh)", "Date": "Date"},
+        y="kWh",
+        color="Source",
+        color_discrete_map={"Grid Import": "#EF553B", "Solar Production": "#FECB52", "Battery Discharge": "#00CC96"},
+        title="Daily Consumption Supply Sources (kWh)",
         barmode="stack"
     )
 
