@@ -62,19 +62,44 @@ def calculate_baseline(df):
     df['cost_baseline'] = df['Consumed_kWh'] * df['import_rate']
     return df
 
+def summarize_baseline(df):
+    """Calculates summary metrics broken down by Peak and Off-Peak windows."""
+    if df.empty:
+        return {}
+    
+    peak_mask = df['is_peak'] == True
+    offpeak_mask = df['is_peak'] == False
+
+    peak_kwh = df.loc[peak_mask, 'Consumed_kWh'].sum()
+    offpeak_kwh = df.loc[offpeak_mask, 'Consumed_kWh'].sum()
+    total_kwh = df['Consumed_kWh'].sum()
+
+    peak_cost = df.loc[peak_mask, 'cost_baseline'].sum(skipna=True)
+    offpeak_cost = df.loc[offpeak_mask, 'cost_baseline'].sum(skipna=True)
+    total_cost = df['cost_baseline'].sum(skipna=True)
+
+    return {
+        "total_kwh": total_kwh,
+        "peak_kwh": peak_kwh,
+        "offpeak_kwh": offpeak_kwh,
+        "total_cost": total_cost,
+        "peak_cost": peak_cost,
+        "offpeak_cost": offpeak_cost,
+        "effective_rate": total_cost / total_kwh if total_kwh > 0 else 0,
+        "peak_effective_rate": peak_cost / peak_kwh if peak_kwh > 0 else 0,
+        "offpeak_effective_rate": offpeak_cost / offpeak_kwh if offpeak_kwh > 0 else 0,
+    }
+
 if __name__ == "__main__":
     df = load_energy_data()
     if not df.empty:
         df = apply_tariffs(df)
         df = calculate_baseline(df)
-        
-        unmatched = df[df['import_rate'].isna()]
-        if not unmatched.empty:
-            print(f"⚠️ Warning: {len(unmatched)} intervals could not be matched to rates_schedule.csv!")
-            print("Unmatched date range:", unmatched['Date/Time'].min(), "to", unmatched['Date/Time'].max())
+        summary = summarize_baseline(df)
         
         print(f"Processed {len(df)} rows.")
-        print(f"Total Grid Consumption: {df['Consumed_kWh'].sum():,.2f} kWh")
-        print(f"Total Baseline Cost: ${df['cost_baseline'].sum():,.2f}")
+        print(f"Total Usage:    {summary['total_kwh']:,.1f} kWh | Cost: ${summary['total_cost']:,.2f}")
+        print(f"Peak Usage:     {summary['peak_kwh']:,.1f} kWh | Cost: ${summary['peak_cost']:,.2f}")
+        print(f"Off-Peak Usage: {summary['offpeak_kwh']:,.1f} kWh | Cost: ${summary['offpeak_cost']:,.2f}")
     else:
         print("No data found in database. Run db.py first.")
