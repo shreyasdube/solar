@@ -6,8 +6,8 @@ import numpy as np
 DB_PATH = "data/enphase.db"
 
 # Estimated default system costs for ROI/Payback calculation (adjustable)
-SOLAR_SYSTEM_COST = 18000.0  # e.g., estimated net cost for solar array
-BATTERY_SYSTEM_COST = 10000.0 # e.g., estimated net cost for battery storage
+SOLAR_SYSTEM_COST = 26000.0  # e.g., estimated net cost for solar array
+BATTERY_SYSTEM_COST = 20000.0 # e.g., estimated net cost for battery storage
 
 def load_energy_data(db_path=DB_PATH):
     """Loads interval data and pre-calculated rates directly from SQLite."""
