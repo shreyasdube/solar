@@ -61,50 +61,49 @@ else:
         st.metric("Solar Export", f"{summary['offpeak_export_kwh']:,.1f} kWh", f"-${summary['offpeak_export_credit']:,.2f}")
         st.caption(f"**Export Rate:** {exp_op_rates}")
 
-    # 3. Hourly Peak/Off-Peak Import & Export Visualization
+    # 3. Daily Peak/Off-Peak Import & Export Visualization
     st.markdown("---")
-    st.subheader("Hourly Grid Activity (Peak vs. Off-Peak Imports & Solar Exports)")
+    st.subheader("Daily Grid Activity (Peak vs. Off-Peak Imports & Solar Exports)")
 
-    df['Hourly_Timestamp'] = df['Date/Time'].dt.floor('h')
+    df['Date'] = df['Date/Time'].dt.date
     df['Rate_Window'] = df['is_peak'].map({True: 'On-Peak', False: 'Off-Peak'})
 
-    # Hourly aggregate
-    hourly_df = (
-        df.groupby(['Hourly_Timestamp', 'Rate_Window'])[['Imported_kWh', 'Exported_kWh']]
+    # Daily aggregate
+    daily_df = (
+        df.groupby(['Date', 'Rate_Window'])[['Imported_kWh', 'Exported_kWh']]
         .sum()
         .reset_index()
     )
 
     # Reshape for multi-series Plotly chart
-    hourly_melted = pd.melt(
-        hourly_df,
-        id_vars=['Hourly_Timestamp', 'Rate_Window'],
+    daily_melted = pd.melt(
+        daily_df,
+        id_vars=['Date', 'Rate_Window'],
         value_vars=['Imported_kWh', 'Exported_kWh'],
         var_name='Type',
         value_name='kWh'
     )
 
     # Combine Type and Rate Window into explicit legend categories
-    hourly_melted['Category'] = hourly_melted['Rate_Window'] + " " + hourly_melted['Type'].map({
+    daily_melted['Category'] = daily_melted['Rate_Window'] + " " + daily_melted['Type'].map({
         'Imported_kWh': 'Import',
         'Exported_kWh': 'Solar Export'
     })
 
     fig = px.bar(
-        hourly_melted,
-        x="Hourly_Timestamp",
+        daily_melted,
+        x="Date",
         y="kWh",
         color="Category",
         color_discrete_map={
-            "On-Peak Import": "#EF553B",      # Dark Red
-            "Off-Peak Import": "#636efa",     # Dark Blue
-            "On-Peak Solar Export": "#FFA15A", # Light Orange
+            "On-Peak Import": "#EF553B",      # Red
+            "Off-Peak Import": "#636efa",     # Blue
+            "On-Peak Solar Export": "#FFA15A", # Orange
             "Off-Peak Solar Export": "#00CC96" # Green
         },
-        title="Hourly Grid Activity (kWh)",
-        labels={"kWh": "Energy (kWh)", "Hourly_Timestamp": "Date & Time"},
+        title="Daily Grid Activity Breakdown (kWh)",
+        labels={"kWh": "Energy (kWh)", "Date": "Date"},
         barmode="stack"
     )
 
-    fig.update_layout(bargap=0)
     st.plotly_chart(fig, use_container_width=True)
