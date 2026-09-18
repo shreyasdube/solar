@@ -60,33 +60,30 @@ else:
         st.metric("Off-Peak Cost", f"${summary['offpeak_cost']:,.2f}")
         st.caption(f"**Applied Tariff Rates:** {offpeak_rates_str}")
 
-    # Stacked Hourly Bar Chart
+    # Daily Stacked Bar Chart
     st.markdown("---")
-    st.subheader("Hourly Electricity Consumption (Peak vs. Off-Peak)")
+    st.subheader("Daily Electricity Consumption (Peak vs. Off-Peak)")
 
-    # Floor timestamps to hourly buckets while preserving rate window status
-    df['Hourly_Timestamp'] = df['Date/Time'].dt.floor('h')
+    # Extract date for daily aggregation
+    df['Date'] = df['Date/Time'].dt.date
     df['Rate Window'] = df['is_peak'].map({True: 'On-Peak', False: 'Off-Peak'})
 
-    # Aggregate 15-minute intervals into hourly sums per rate window
-    hourly_df = (
-        df.groupby(['Hourly_Timestamp', 'Rate Window'])['Consumed_kWh']
+    # Group by calendar date and rate window
+    daily_df = (
+        df.groupby(['Date', 'Rate Window'])['Consumed_kWh']
         .sum()
         .reset_index()
     )
 
     fig = px.bar(
-        hourly_df,
-        x="Hourly_Timestamp",
+        daily_df,
+        x="Date",
         y="Consumed_kWh",
         color="Rate Window",
         color_discrete_map={"On-Peak": "#EF553B", "Off-Peak": "#636efa"},
-        title="Hourly Consumption Breakdown (kWh)",
-        labels={"Consumed_kWh": "Consumption (kWh)", "Hourly_Timestamp": "Date & Time"},
+        title="Daily Consumption Breakdown (kWh)",
+        labels={"Consumed_kWh": "Consumption (kWh)", "Date": "Date"},
         barmode="stack"
     )
-
-    # Remove gaps between bars for clean rendering over multi-week spans
-    fig.update_layout(bargap=0)
 
     st.plotly_chart(fig, use_container_width=True)
