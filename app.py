@@ -3,19 +3,19 @@ import plotly.express as px
 import pandas as pd
 from engine import (
     load_energy_data,
-    calculate_actual_bill,
+    calculate_scenarios,
     summarize_actual_vs_baseline,
 )
 
 st.set_page_config(page_title="Belmont Energy Monitor", layout="wide")
 
-st.title("Belmont Energy: Baseline vs. Actual Bill")
+st.title("Belmont Energy: Baseline vs. Solar vs. Battery Simulation")
 
 @st.cache_data
 def get_processed_data():
     df = load_energy_data()
     if not df.empty:
-        df = calculate_actual_bill(df)
+        df = calculate_scenarios(df)
     return df
 
 df = get_processed_data()
@@ -27,7 +27,7 @@ else:
     unmatched_df = df[df['import_rate'].isna()]
     if not unmatched_df.empty:
         st.error(
-            f"⚠️ **{len(unmatched_df)} interval records** have no matching tariff!"
+            f"⚠️ **{len(unmatched_df)} interval records** have no matching tariff in `rates_schedule.csv`!"
         )
 
     # Compute overall and monthly summaries
@@ -53,79 +53,101 @@ else:
         summary = full_summary
         timeframe_label = "(All Months)"
 
-    # 1. High Level Bill Summary
-    st.markdown(f"### 💰 Baseline vs. Actual Bill Summary {timeframe_label}")
-    c1, c2, c3, c4, c5 = st.columns(5)
+    # 1. High Level Bill Summary Comparison
+    st.markdown(f"### 💰 Financial Summary Comparison {timeframe_label}")
+    c1, c2, c3, c4 = st.columns(4)
     
     c1.metric(
-        "Baseline TOU Cost", 
+        "Baseline Cost (No Solar)", 
         f"${summary['baseline_cost']:,.2f}",
-        help="Estimated cost if 100% of consumption was imported from the grid with no solar/battery."
+        help="Estimated cost if 100% of consumption was imported from the grid with no solar or battery."
     )
     c2.metric(
-        "Gross Import Cost", 
-        f"${summary['actual_import_cost']:,.2f}",
-        help=f"On-Peak: ${summary['peak_import_cost']:,.2f} | Off-Peak: ${summary['offpeak_import_cost']:,.2f}"
+        "Solar Only Net Cost", 
+        f"${summary['solar_only_net_cost']:,.2f}",
+        delta=f"-${summary['solar_only_savings']:,.2f} vs Base",
+        delta_color="inverse",
+        help="Simulated cost with solar panels only and no home battery storage."
     )
     c3.metric(
-        "Solar Export Credits", 
-        f"-${summary['actual_export_credit']:,.2f}",
-        delta=f"-${summary['actual_export_credit']:,.2f}",
-        delta_color="normal",
-        help=f"On-Peak Export: -${summary['peak_export_credit']:,.2f} | Off-Peak Export: -${summary['offpeak_export_credit']:,.2f}"
+        "Solar + Battery Net Cost", 
+        f"${summary['actual_net_cost']:,.2f}",
+        delta=f"-${summary['total_savings']:,.2f} vs Base",
+        delta_color="inverse",
+        help="Actual cost with both solar generation and your Enphase battery system."
     )
     c4.metric(
-        "Actual Net Bill", 
-        f"${summary['actual_net_cost']:,.2f}",
-        help="Gross Import Cost minus Solar Export Credits."
-    )
-    c5.metric(
-        "Total Net Savings", 
-        f"${summary['total_savings']:,.2f}", 
-        delta=f"{summary['savings_pct']:.1f}% Savings",
-        help="Baseline Cost minus Actual Net Bill."
+        "Battery Added Value", 
+        f"${summary['battery_added_savings']:,.2f}",
+        delta="Additional savings from battery",
+        help="Extra savings achieved by the battery above the solar-only setup."
     )
 
-    # 2. TOU Peak & Off-Peak Rate Verification Breakdown
+    # 2. Detailed Scenario Breakdown Tabs
     st.markdown("---")
-    st.markdown(f"### 📊 TOU Rate & Financial Verification Breakdown {timeframe_label}")
-    
-    col_peak, col_offpeak = st.columns(2)
-    
-    imp_p_rates = ", ".join([f"${r:.5f}" for r in summary['import_peak_rates']])
-    exp_p_rates = ", ".join([f"${r:.5f}" for r in summary['export_peak_rates']])
-    imp_op_rates = ", ".join([f"${r:.5f}" for r in summary['import_offpeak_rates']])
-    exp_op_rates = ", ".join([f"${r:.5f}" for r in summary['export_offpeak_rates']])
+    tab_actual, tab_solar_only, tab_roi = st.tabs([
+        "🔋 Solar + Battery (Actual)", 
+        "☀️ Solar Only (Simulation)", 
+        "📈 ROI & Payback Analysis"
+    ])
 
-    with col_peak:
-        st.markdown("🔴 **On-Peak Summary**")
-        st.metric("Grid Import", f"{summary['peak_import_kwh']:,.1f} kWh", f"${summary['peak_import_cost']:,.2f}")
-        st.caption(f"**Import Rate:** {imp_p_rates}")
-        st.metric("Solar Export", f"{summary['peak_export_kwh']:,.1f} kWh", f"-${summary['peak_export_credit']:,.2f}")
-        st.caption(f"**Export Rate:** {exp_p_rates}")
+    with tab_actual:
+        st.subheader(f"Solar + Battery Performance Breakdown {timeframe_label}")
+        col_pa1, col_pa2 = st.columns(2)
+        
+        with col_pa1:
+            st.markdown("🔴 **On-Peak Summary**")
+            st.metric("Grid Import", f"{summary['peak_import_kwh']:,.1f} kWh", f"${summary['peak_import_cost']:,.2f}")
+            st.metric("Solar Export", f"{summary['peak_export_kwh']:,.1f} kWh", f"-${summary['peak_export_credit']:,.2f}")
 
-    with col_offpeak:
-        st.markdown("🔵 **Off-Peak Summary**")
-        st.metric("Grid Import", f"{summary['offpeak_import_kwh']:,.1f} kWh", f"${summary['offpeak_import_cost']:,.2f}")
-        st.caption(f"**Import Rate:** {imp_op_rates}")
-        st.metric("Solar Export", f"{summary['offpeak_export_kwh']:,.1f} kWh", f"-${summary['offpeak_export_credit']:,.2f}")
-        st.caption(f"**Export Rate:** {exp_op_rates}")
+        with col_pa2:
+            st.markdown("🔵 **Off-Peak Summary**")
+            st.metric("Grid Import", f"{summary['offpeak_import_kwh']:,.1f} kWh", f"${summary['offpeak_import_cost']:,.2f}")
+            st.metric("Solar Export", f"{summary['offpeak_export_kwh']:,.1f} kWh", f"-${summary['offpeak_export_credit']:,.2f}")
 
-    # 3. Daily Peak/Off-Peak Import & Export Visualization
+    with tab_solar_only:
+        st.subheader(f"Solar-Only (No Battery) Simulation Breakdown {timeframe_label}")
+        col_so1, col_so2 = st.columns(2)
+        
+        with col_so1:
+            st.markdown("🔴 **On-Peak Summary (Solar Only)**")
+            st.metric("Grid Import", f"{summary['peak_so_import_kwh']:,.1f} kWh", f"${summary['peak_so_import_cost']:,.2f}")
+            st.metric("Solar Export", f"{summary['peak_so_export_kwh']:,.1f} kWh", f"-${summary['peak_so_export_credit']:,.2f}")
+
+        with col_so2:
+            st.markdown("🔵 **Off-Peak Summary (Solar Only)**")
+            st.metric("Grid Import", f"{summary['offpeak_so_import_kwh']:,.1f} kWh", f"${summary['offpeak_so_import_cost']:,.2f}")
+            st.metric("Solar Export", f"{summary['offpeak_so_export_kwh']:,.1f} kWh", f"-${summary['offpeak_so_export_credit']:,.2f}")
+
+    with tab_roi:
+        st.subheader("Financial Return on Investment (ROI) & Simple Payback")
+        r1, r2 = st.columns(2)
+        
+        with r1:
+            st.markdown("### ☀️ Solar Array Only")
+            st.metric("Estimated ROI", f"{summary['solar_roi_pct']:.2f}% / year")
+            st.metric("Simple Payback Period", f"{summary['solar_payback_yrs']:.1f} Years")
+            st.caption("Based on standard solar array capital investment defaults.")
+
+        with r2:
+            st.markdown("### 🔋 Solar + Battery Combined")
+            st.metric("Estimated ROI", f"{summary['combined_roi_pct']:.2f}% / year")
+            st.metric("Simple Payback Period", f"{summary['combined_payback_yrs']:.1f} Years")
+            st.caption("Based on combined solar array and battery storage investment defaults.")
+
+    # 3. Daily Activity Visualization
     st.markdown("---")
-    st.subheader(f"Daily Grid Activity Breakdown {timeframe_label}")
+    st.subheader(f"Daily Actual Grid Activity Breakdown {timeframe_label}")
 
     df_filtered['Date'] = df_filtered['Date/Time'].dt.date
     df_filtered['Rate_Window'] = df_filtered['is_peak'].map({True: 'On-Peak', False: 'Off-Peak'})
 
-    # Daily aggregate
     daily_df = (
         df_filtered.groupby(['Date', 'Rate_Window'])[['Imported_kWh', 'Exported_kWh']]
         .sum()
         .reset_index()
     )
 
-    # Reshape for multi-series Plotly chart
     daily_melted = pd.melt(
         daily_df,
         id_vars=['Date', 'Rate_Window'],
@@ -134,7 +156,6 @@ else:
         value_name='kWh'
     )
 
-    # Combine Type and Rate Window into explicit legend categories
     daily_melted['Category'] = daily_melted['Rate_Window'] + " " + daily_melted['Type'].map({
         'Imported_kWh': 'Import',
         'Exported_kWh': 'Solar Export'
