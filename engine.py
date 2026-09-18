@@ -1,19 +1,17 @@
 import os
 import sqlite3
 import pandas as pd
-import numpy as np
 
 DB_PATH = "data/enphase.db"
-RATES_PATH = "rates_schedule.csv"
 
 def load_energy_data(db_path=DB_PATH):
-    """Loads interval data from SQLite enphase_energy_data table."""
+    """Loads interval data and pre-calculated rates directly from SQLite."""
     if not os.path.exists(db_path):
         return pd.DataFrame()
-    conn = sqlite3.connect(db_path)
     
+    conn = sqlite3.connect(db_path)
     query = """
-    SELECT timestamp, consumed_wh, imported_wh, exported_wh 
+    SELECT timestamp, consumed_wh, imported_wh, exported_wh, import_rate, export_rate, is_peak 
     FROM enphase_energy_data
     """
     try:
@@ -24,48 +22,8 @@ def load_energy_data(db_path=DB_PATH):
     conn.close()
     if not df.empty:
         df['Date/Time'] = pd.to_datetime(df['timestamp'], utc=True).dt.tz_localize(None)
+        df['is_peak'] = df['is_peak'].astype(bool)
         df = df.sort_values('Date/Time').drop_duplicates(subset=['Date/Time'])
-    return df
-
-def apply_tariffs(df, rates_path=RATES_PATH):
-    """Maps seasonal TOU import and export tariffs to each 15-minute interval."""
-    df['import_rate'] = np.nan
-    df['export_rate'] = 0.0
-    df['is_peak'] = False
-    
-    if not os.path.exists(rates_path) or df.empty:
-        return df
-    
-    rates = pd.read_csv(rates_path)
-    rates['effective_start'] = pd.to_datetime(rates['effective_start'])
-    rates['effective_end'] = pd.to_datetime(rates['effective_end']) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
-    
-    for _, rate in rates.iterrows():
-        date_mask = (df['Date/Time'] >= rate['effective_start']) & (df['Date/Time'] <= rate['effective_end'])
-        
-        m = df['Date/Time'].dt.month
-        if rate['start_month'] <= rate['end_month']:
-            season_mask = (m >= rate['start_month']) & (m <= rate['end_month'])
-        else:
-            season_mask = (m >= rate['start_month']) | (m <= rate['end_month'])
-            
-        combined_mask = date_mask & season_mask
-        h = df['Date/Time'].dt.hour
-        peak_mask = combined_mask & (h >= rate['peak_start_hour']) & (h < rate['peak_end_hour'])
-        off_peak_mask = combined_mask & ~peak_mask
-        
-        df.loc[peak_mask, 'is_peak'] = True
-        df.loc[peak_mask, 'import_rate'] = rate['import_on_peak']
-        df.loc[off_peak_mask, 'import_rate'] = rate['import_off_peak']
-        
-        if 'export_on_peak' in rate and 'export_off_peak' in rate:
-            df.loc[peak_mask, 'export_rate'] = rate['export_on_peak']
-            df.loc[off_peak_mask, 'export_rate'] = rate['export_off_peak']
-        else:
-            # Fallback 1:1 net metering
-            df.loc[peak_mask, 'export_rate'] = rate['import_on_peak']
-            df.loc[off_peak_mask, 'export_rate'] = rate['import_off_peak']
-        
     return df
 
 def calculate_actual_bill(df):
@@ -160,7 +118,6 @@ def summarize_actual_vs_baseline(df):
 if __name__ == "__main__":
     df = load_energy_data()
     if not df.empty:
-        df = apply_tariffs(df)
         df = calculate_actual_bill(df)
         summary = summarize_actual_vs_baseline(df)
         
