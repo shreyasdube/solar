@@ -14,7 +14,8 @@ def load_energy_data(db_path=DB_PATH):
     df = pd.read_sql("SELECT timestamp, consumed_wh, imported_wh FROM enphase_energy_data", conn)
     conn.close()
     if not df.empty:
-        df['Date/Time'] = pd.to_datetime(df['timestamp'])
+        # Parse datetime and convert to timezone-naive to match rates_schedule.csv
+        df['Date/Time'] = pd.to_datetime(df['timestamp'], utc=True).dt.tz_localize(None)
         df = df.sort_values('Date/Time').drop_duplicates(subset=['Date/Time'])
     return df
 
@@ -57,7 +58,7 @@ def calculate_baseline(df):
     
     # Wh to kWh
     df['Consumed_kWh'] = df['consumed_wh'] / 1000.0
-    # Baseline Cost = Total Energy Consumed * Import Rate (NaN * kWh = NaN)
+    # Baseline Cost = Total Energy Consumed * Import Rate
     df['cost_baseline'] = df['Consumed_kWh'] * df['import_rate']
     return df
 
