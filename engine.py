@@ -16,7 +16,7 @@ def load_energy_data(db_path=DB_PATH):
     
     conn = sqlite3.connect(db_path)
     query = """
-    SELECT timestamp, consumed_wh, imported_wh, exported_wh, import_rate, export_rate, is_peak 
+    SELECT timestamp, consumed_wh, produced_wh, imported_wh, exported_wh, import_rate, export_rate, is_peak 
     FROM enphase_energy_data
     """
     try:
@@ -41,6 +41,7 @@ def calculate_scenarios(df):
     
     # 1. Base Energy Conversions (kWh)
     df['Consumed_kWh'] = df.get('consumed_wh', 0) / 1000.0
+    df['Produced_kWh'] = df.get('produced_wh', 0) / 1000.0
     df['Imported_kWh'] = df.get('imported_wh', 0) / 1000.0
     df['Exported_kWh'] = df.get('exported_wh', 0) / 1000.0
 
@@ -52,16 +53,11 @@ def calculate_scenarios(df):
     df['credit_actual_export'] = df['Exported_kWh'] * df['export_rate']
     df['cost_actual_net'] = df['cost_actual_import'] - df['credit_actual_export']
 
-    # 2. Derive Solar-Only (No Battery) Scenario
-    # Derived Solar Production = Consumption + Actual Exports - Actual Imports
-    df['production_wh'] = (df['consumed_wh'] + df['exported_wh'] - df['imported_wh']).clip(lower=0)
-    
-    # Without battery, production meets load first. Excess exports, deficit imports.
-    df['solar_only_imported_wh'] = (df['consumed_wh'] - df['production_wh']).clip(lower=0)
-    df['solar_only_exported_wh'] = (df['production_wh'] - df['consumed_wh']).clip(lower=0)
-
-    df['Solar_Only_Import_kWh'] = df['solar_only_imported_wh'] / 1000.0
-    df['Solar_Only_Export_kWh'] = df['solar_only_exported_wh'] / 1000.0
+    # 2. Clean Solar-Only (No Battery) Simulation using true physical production
+    # Without a battery, production meets load first (instantaneous self-consumption).
+    # Deficit becomes imports; surplus becomes exports.
+    df['Solar_Only_Import_kWh'] = (df['Consumed_kWh'] - df['Produced_kWh']).clip(lower=0)
+    df['Solar_Only_Export_kWh'] = (df['Produced_kWh'] - df['Consumed_kWh']).clip(lower=0)
 
     df['cost_solar_only_import'] = df['Solar_Only_Import_kWh'] * df['import_rate']
     df['credit_solar_only_export'] = df['Solar_Only_Export_kWh'] * df['export_rate']
