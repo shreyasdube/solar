@@ -1,6 +1,7 @@
 import streamlit as st
 import plotly.express as px
-from engine import load_energy_data, apply_tariffs, calculate_baseline
+import pandas as pd
+from engine import load_energy_data, apply_tariffs, calculate_baseline, summarize_baseline
 
 st.set_page_config(page_title="Belmont Energy Monitor", layout="wide")
 
@@ -28,27 +29,44 @@ else:
             f"to **{unmatched_df['Date/Time'].max().strftime('%Y-%m-%d')}**."
         )
 
-    # Summary Metrics
-    col1, col2, col3 = st.columns(3)
-    total_kwh = df['Consumed_kWh'].sum()
-    total_cost = df['cost_baseline'].sum(skipna=True)
-    avg_rate = total_cost / total_kwh if total_kwh > 0 else 0
+    summary = summarize_baseline(df)
 
-    col1.metric("Total Consumption", f"{total_kwh:,.1f} kWh")
-    col2.metric("Total Baseline Cost", f"${total_cost:,.2f}")
-    col3.metric("Effective Rate", f"${avg_rate:.3f} / kWh")
+    # Executive Summary Metrics
+    st.markdown("### Cost & Consumption Summary")
+    
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Consumption", f"{summary['total_kwh']:,.1f} kWh")
+    c2.metric("Total Baseline Cost", f"${summary['total_cost']:,.2f}")
+    c3.metric("Effective Avg Rate", f"${summary['effective_rate']:.3f} / kWh")
 
+    # Peak vs Off-Peak Detailed Breakdown
     st.markdown("---")
+    st.markdown("### Time-of-Use (TOU) Breakdown")
+    
+    col_peak, col_offpeak = st.columns(2)
+    
+    with col_peak:
+        st.markdown("🔴 **On-Peak**")
+        st.metric("Peak Usage", f"{summary['peak_kwh']:,.1f} kWh")
+        st.metric("Peak Cost", f"${summary['peak_cost']:,.2f}")
+        st.metric("Avg Peak Rate", f"${summary['peak_effective_rate']:.3f} / kWh")
 
-    # Time-Series Chart
-    st.subheader("15-Minute Electricity Consumption & Peak Hours")
+    with col_offpeak:
+        st.markdown("🔵 **Off-Peak**")
+        st.metric("Off-Peak Usage", f"{summary['offpeak_kwh']:,.1f} kWh")
+        st.metric("Off-Peak Cost", f"${summary['offpeak_cost']:,.2f}")
+        st.metric("Avg Off-Peak Rate", f"${summary['offpeak_effective_rate']:.3f} / kWh")
+
+    # Interactive Chart
+    st.markdown("---")
+    st.subheader("15-Minute Interval Usage")
     fig = px.line(
         df, 
         x="Date/Time", 
         y="Consumed_kWh", 
         color="is_peak",
         color_discrete_map={True: "red", False: "blue"},
-        title="Interval Usage (Red = Peak Rate Hours)",
-        labels={"Consumed_kWh": "Consumption (kWh)", "is_peak": "Peak Hours"}
+        title="Consumption (Red = On-Peak Hours, Blue = Off-Peak Hours)",
+        labels={"Consumed_kWh": "Consumption (kWh)", "is_peak": "Peak Window"}
     )
     st.plotly_chart(fig, use_container_width=True)
