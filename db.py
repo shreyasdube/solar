@@ -55,7 +55,7 @@ def apply_tariffs_to_df(df, rates_df):
     return df
 
 def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
-    """Ingests all CSV files in data_dir, maps rates, and updates SQLite."""
+    """Ingests all CSV files in raw_reports/data, maps rates, and updates SQLite."""
     rates_df = get_rates_df()
     
     search_dirs = [data_dir, "data"]
@@ -76,8 +76,12 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
         try:
             temp_df = pd.read_csv(f)
             ts_col = [c for c in temp_df.columns if 'date' in c.lower() or 'time' in c.lower()][0]
-            # Convert to datetime and strip timezone info
-            temp_df['timestamp'] = pd.to_datetime(temp_df[ts_col], utc=True).dt.tz_localize(None)
+            # Convert to standard pandas datetime and strip timezone info
+            temp_df['timestamp'] = pd.to_datetime(temp_df[ts_col], format='ISO8601', errors='coerce')
+            if temp_df['timestamp'].dt.tz is not None:
+                temp_df['timestamp'] = temp_df['timestamp'].dt.tz_localize(None)
+                
+            temp_df = temp_df.dropna(subset=['timestamp'])
             frames.append(temp_df)
         except Exception as e:
             print(f"Skipping {f}: {e}")
@@ -99,8 +103,9 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
 
     processed_df = apply_tariffs_to_df(raw_df, rates_df)
     
+    # Store timestamp in SQLite as standard ISO format string (YYYY-MM-DD HH:MM:SS)
     db_df = pd.DataFrame({
-        'timestamp': processed_df['timestamp'].astype(str),
+        'timestamp': processed_df['timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S'),
         'consumed_wh': processed_df.get('consumed_wh', 0.0),
         'imported_wh': processed_df.get('imported_wh', 0.0),
         'exported_wh': processed_df.get('exported_wh', 0.0),
@@ -111,16 +116,11 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
 
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     conn = sqlite3.connect(db_path)
-    try:
-        existing_df = pd.read_sql("SELECT * FROM enphase_energy_data", conn)
-        combined = pd.concat([existing_df, db_df], ignore_index=True)
-        combined = combined.drop_duplicates(subset=['timestamp'], keep='last')
-    except Exception:
-        combined = db_df
-
-    combined.to_sql("enphase_energy_data", conn, if_exists="replace", index=False)
+    
+    # Overwrite DB with the clean schema and formatted strings
+    db_df.to_sql("enphase_energy_data", conn, if_exists="replace", index=False)
     conn.close()
-    print(f"Successfully updated {db_path}. Total records: {len(combined)}")
+    print(f"Successfully re-indexed and updated {db_path}. Total records: {len(db_df)}")
 
 if __name__ == "__main__":
     ingest_csv_files()
