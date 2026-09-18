@@ -167,8 +167,8 @@ else:
         y="kWh",
         color="Category",
         color_discrete_map={
-            "On-Peak Import": "#EF553B",      # Red
-            "Off-Peak Import": "#636efa",     # Blue
+            "On-Peak Import": "#EF553B",     # Red
+            "Off-Peak Import": "#636efa",    # Blue
             "On-Peak Solar Export": "#FFA15A", # Orange
             "Off-Peak Solar Export": "#00CC96" # Green
         },
