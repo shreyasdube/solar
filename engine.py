@@ -11,25 +11,24 @@ SOLAR_SYSTEM_COST = 26000.0
 BATTERY_SYSTEM_COST = 20000.0 
 
 def load_srec_data(csv_path=SREC_CSV_PATH):
-    """Loads historical SREC sales to calculate annualized renewable revenue."""
+    """Loads historical SREC sales and computes total earnings and annualized revenue."""
     if not os.path.exists(csv_path):
-        return 0.0, 0.0
+        return 0.0, 0.0, pd.DataFrame()
     
     try:
         df = pd.read_csv(csv_path)
         df['date'] = pd.to_datetime(df['date'])
         total_srec_revenue = df['total_sales'].sum()
         
-        # Calculate annual multiplier based on date span of SREC records
         days_span = (df['date'].max() - df['date'].min()).days
         if days_span > 30:
             annual_srec_revenue = total_srec_revenue * (365.25 / days_span)
         else:
-            annual_srec_revenue = total_srec_revenue  # Fallback if sparse
+            annual_srec_revenue = total_srec_revenue
             
-        return total_srec_revenue, annual_srec_revenue
+        return total_srec_revenue, annual_srec_revenue, df
     except Exception:
-        return 0.0, 0.0
+        return 0.0, 0.0, pd.DataFrame()
 
 def load_energy_data(db_path=DB_PATH):
     """Loads interval data and pre-calculated rates directly from SQLite."""
@@ -103,13 +102,13 @@ def summarize_slice(df):
     total_savings = baseline_cost - actual_net_cost
 
     # Load SREC data
-    total_srec, annual_srec = load_srec_data()
+    total_srec, annual_srec, srec_df = load_srec_data()
 
-    # Annualization factor based on interval data span
+    # Annualization factor
     days_covered = (df['Date/Time'].max() - df['Date/Time'].min()).days or 1
     annualizer = 365.25 / max(days_covered, 1)
 
-    # Total Annual Return = Annual Bill Savings + Annual SREC Revenue
+    # Combined Annual Returns (Bill Savings + SREC Revenue)
     annual_solar_savings = (solar_only_savings * annualizer) + annual_srec
     annual_total_savings = (total_savings * annualizer) + annual_srec
 
@@ -120,7 +119,26 @@ def summarize_slice(df):
     combined_roi_pct = (annual_total_savings / combined_system_cost) * 100 if combined_system_cost > 0 else 0
     combined_payback_yrs = combined_system_cost / annual_total_savings if annual_total_savings > 0 else float('inf')
 
-    # Peak vs Off-Peak Breakdowns (omitted for brevity, keep existing dict fields...)
+    peak_import_kwh = df.loc[peak_mask, 'Imported_kWh'].sum()
+    peak_import_cost = df.loc[peak_mask, 'cost_actual_import'].sum()
+    peak_export_kwh = df.loc[peak_mask, 'Exported_kWh'].sum()
+    peak_export_credit = df.loc[peak_mask, 'credit_actual_export'].sum()
+
+    offpeak_import_kwh = df.loc[offpeak_mask, 'Imported_kWh'].sum()
+    offpeak_import_cost = df.loc[offpeak_mask, 'cost_actual_import'].sum()
+    offpeak_export_kwh = df.loc[offpeak_mask, 'Exported_kWh'].sum()
+    offpeak_export_credit = df.loc[offpeak_mask, 'credit_actual_export'].sum()
+
+    peak_so_import_kwh = df.loc[peak_mask, 'Solar_Only_Import_kWh'].sum()
+    peak_so_import_cost = df.loc[peak_mask, 'cost_solar_only_import'].sum()
+    peak_so_export_kwh = df.loc[peak_mask, 'Solar_Only_Export_kWh'].sum()
+    peak_so_export_credit = df.loc[peak_mask, 'credit_solar_only_export'].sum()
+
+    offpeak_so_import_kwh = df.loc[offpeak_mask, 'Solar_Only_Import_kWh'].sum()
+    offpeak_so_import_cost = df.loc[offpeak_mask, 'cost_solar_only_import'].sum()
+    offpeak_so_export_kwh = df.loc[offpeak_mask, 'Solar_Only_Export_kWh'].sum()
+    offpeak_so_export_credit = df.loc[offpeak_mask, 'credit_solar_only_export'].sum()
+
     return {
         "consumed_kwh": df['Consumed_kWh'].sum(),
         "baseline_cost": baseline_cost,
@@ -135,5 +153,36 @@ def summarize_slice(df):
         "solar_payback_yrs": solar_payback_yrs,
         "combined_roi_pct": combined_roi_pct,
         "combined_payback_yrs": combined_payback_yrs,
-        # ... retain other breakdown metrics as needed ...
+        "peak_import_kwh": peak_import_kwh,
+        "peak_import_cost": peak_import_cost,
+        "peak_export_kwh": peak_export_kwh,
+        "peak_export_credit": peak_export_credit,
+        "offpeak_import_kwh": offpeak_import_kwh,
+        "offpeak_import_cost": offpeak_import_cost,
+        "offpeak_export_kwh": offpeak_export_kwh,
+        "offpeak_export_credit": offpeak_export_credit,
+        "peak_so_import_kwh": peak_so_import_kwh,
+        "peak_so_import_cost": peak_so_import_cost,
+        "peak_so_export_kwh": peak_so_export_kwh,
+        "peak_so_export_credit": peak_so_export_credit,
+        "offpeak_so_import_kwh": offpeak_so_import_kwh,
+        "offpeak_so_import_cost": offpeak_so_import_cost,
+        "offpeak_so_export_kwh": offpeak_so_export_kwh,
+        "offpeak_so_export_credit": offpeak_so_export_credit,
     }
+
+def summarize_actual_vs_baseline(df):
+    """Summarizes baseline, solar-only, and solar+battery metrics overall and per month."""
+    if df.empty:
+        return {}
+
+    overall_summary = summarize_slice(df)
+    
+    df['Month_Period'] = df['Date/Time'].dt.to_period('M')
+    monthly_summaries = {}
+    
+    for month, group in df.groupby('Month_Period'):
+        monthly_summaries[str(month)] = summarize_slice(group)
+
+    overall_summary['monthly'] = monthly_summaries
+    return overall_summary
