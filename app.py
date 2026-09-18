@@ -45,7 +45,6 @@ else:
     
     col_peak, col_offpeak = st.columns(2)
     
-    # Format rates lists for display
     peak_rates_str = ", ".join([f"${r:.5f}" for r in summary['peak_rates']]) if summary['peak_rates'] else "None"
     offpeak_rates_str = ", ".join([f"${r:.5f}" for r in summary['offpeak_rates']]) if summary['offpeak_rates'] else "None"
 
@@ -61,23 +60,29 @@ else:
         st.metric("Off-Peak Cost", f"${summary['offpeak_cost']:,.2f}")
         st.caption(f"**Applied Tariff Rates:** {offpeak_rates_str}")
 
-    # Interactive Hourly Chart
+    # Stacked Hourly Bar Chart
     st.markdown("---")
-    st.subheader("Hourly Electricity Consumption")
+    st.subheader("Hourly Electricity Consumption (Peak vs. Off-Peak)")
 
-    # Resample 15-minute data into 1-hour intervals
+    # Map boolean to readable string for legibility in chart legend
+    df['Rate Window'] = df['is_peak'].map({True: 'On-Peak', False: 'Off-Peak'})
+
+    # Resample to hourly bins keeping the Rate Window grouping
     hourly_df = (
-        df.set_index("Date/Time")
-        .resample("1h")["Consumed_kWh"]
+        df.groupby([pd.Grouper(key='Date/Time', freq='1h'), 'Rate Window'])['Consumed_kWh']
         .sum()
         .reset_index()
     )
 
-    fig = px.line(
-        hourly_df, 
-        x="Date/Time", 
-        y="Consumed_kWh", 
-        title="Hourly Usage (kWh)",
-        labels={"Consumed_kWh": "Consumption (kWh)", "Date/Time": "Date & Time"}
+    fig = px.bar(
+        hourly_df,
+        x="Date/Time",
+        y="Consumed_kWh",
+        color="Rate Window",
+        color_discrete_map={"On-Peak": "#EF553B", "Off-Peak": "#636efa"},
+        title="Hourly Consumption Breakdown (kWh)",
+        labels={"Consumed_kWh": "Consumption (kWh)", "Date/Time": "Date & Time"},
+        barmode="stack"
     )
+
     st.plotly_chart(fig, use_container_width=True)
