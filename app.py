@@ -27,10 +27,31 @@ else:
             f"⚠️ **{len(unmatched_df)} interval records** have no matching tariff in `rates_schedule.csv`!"
         )
 
-    summary = summarize_actual_vs_baseline(df)
+    # Compute overall and monthly summaries
+    full_summary = summarize_actual_vs_baseline(df)
+    
+    # Sidebar Month Filter
+    st.sidebar.header("Filter View")
+    available_months = list(full_summary.get('monthly', {}).keys())
+    
+    selected_month = st.sidebar.selectbox(
+        "Select Timeframe:",
+        options=["All Months"] + available_months,
+        index=0
+    )
+
+    # Filter data and select target summary dictionary based on selection
+    if selected_month != "All Months":
+        df_filtered = df[df['Date/Time'].dt.to_period('M').astype(str) == selected_month].copy()
+        summary = full_summary['monthly'][selected_month]
+        timeframe_label = f"({selected_month})"
+    else:
+        df_filtered = df.copy()
+        summary = full_summary
+        timeframe_label = "(All Months)"
 
     # 1. High Level Bill Summary
-    st.markdown("### 💰 Baseline vs. Actual Bill Summary")
+    st.markdown(f"### 💰 Baseline vs. Actual Bill Summary {timeframe_label}")
     c1, c2, c3 = st.columns(3)
     c1.metric("Baseline TOU Cost", f"${summary['baseline_cost']:,.2f}")
     c2.metric("Actual Net Bill", f"${summary['actual_net_cost']:,.2f}")
@@ -38,7 +59,7 @@ else:
 
     # 2. TOU Peak & Off-Peak Rate Verification Breakdown
     st.markdown("---")
-    st.markdown("### 📊 TOU Rate & Financial Verification Breakdown")
+    st.markdown(f"### 📊 TOU Rate & Financial Verification Breakdown {timeframe_label}")
     
     col_peak, col_offpeak = st.columns(2)
     
@@ -63,14 +84,14 @@ else:
 
     # 3. Daily Peak/Off-Peak Import & Export Visualization
     st.markdown("---")
-    st.subheader("Daily Grid Activity (Peak vs. Off-Peak Imports & Solar Exports)")
+    st.subheader(f"Daily Grid Activity Breakdown {timeframe_label}")
 
-    df['Date'] = df['Date/Time'].dt.date
-    df['Rate_Window'] = df['is_peak'].map({True: 'On-Peak', False: 'Off-Peak'})
+    df_filtered['Date'] = df_filtered['Date/Time'].dt.date
+    df_filtered['Rate_Window'] = df_filtered['is_peak'].map({True: 'On-Peak', False: 'Off-Peak'})
 
     # Daily aggregate
     daily_df = (
-        df.groupby(['Date', 'Rate_Window'])[['Imported_kWh', 'Exported_kWh']]
+        df_filtered.groupby(['Date', 'Rate_Window'])[['Imported_kWh', 'Exported_kWh']]
         .sum()
         .reset_index()
     )
@@ -101,7 +122,7 @@ else:
             "On-Peak Solar Export": "#FFA15A", # Orange
             "Off-Peak Solar Export": "#00CC96" # Green
         },
-        title="Daily Grid Activity Breakdown (kWh)",
+        title=f"Daily Grid Activity Breakdown (kWh) {timeframe_label}",
         labels={"kWh": "Energy (kWh)", "Date": "Date"},
         barmode="stack"
     )
