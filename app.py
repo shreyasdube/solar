@@ -1,7 +1,12 @@
 import streamlit as st
 import plotly.express as px
 import pandas as pd
-from engine import load_energy_data, apply_tariffs, calculate_actual_bill, summarize_actual_vs_baseline
+from engine import (
+    load_energy_data,
+    apply_tariffs,
+    calculate_actual_bill,
+    summarize_actual_vs_baseline,
+)
 
 st.set_page_config(page_title="Belmont Energy Monitor", layout="wide")
 
@@ -24,7 +29,7 @@ else:
     unmatched_df = df[df['import_rate'].isna()]
     if not unmatched_df.empty:
         st.error(
-            f"⚠️ **{len(unmatched_df)} interval records** have no matching tariff in `rates_schedule.csv`!"
+            f"⚠️ **{len(unmatched_df)} interval records** have no matching tariff!"
         )
 
     # Compute overall and monthly summaries
@@ -50,12 +55,38 @@ else:
         summary = full_summary
         timeframe_label = "(All Months)"
 
-    # 1. High Level Bill Summary
+    # 1. High Level Bill Summary (Updated to 5 metric cards)
     st.markdown(f"### 💰 Baseline vs. Actual Bill Summary {timeframe_label}")
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Baseline TOU Cost", f"${summary['baseline_cost']:,.2f}")
-    c2.metric("Actual Net Bill", f"${summary['actual_net_cost']:,.2f}")
-    c3.metric("Total Net Savings", f"${summary['total_savings']:,.2f}", delta=f"{summary['savings_pct']:.1f}% Savings")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    
+    c1.metric(
+        "Baseline TOU Cost", 
+        f"${summary['baseline_cost']:,.2f}",
+        help="Estimated cost if 100% of consumption was imported from the grid with no solar/battery."
+    )
+    c2.metric(
+        "Gross Import Cost", 
+        f"${summary['actual_import_cost']:,.2f}",
+        help=f"On-Peak: ${summary['peak_import_cost']:,.2f} | Off-Peak: ${summary['offpeak_import_cost']:,.2f}"
+    )
+    c3.metric(
+        "Solar Export Credits", 
+        f"-${summary['actual_export_credit']:,.2f}",
+        delta=f"-${summary['actual_export_credit']:,.2f}",
+        delta_color="normal",
+        help=f"On-Peak Export: -${summary['peak_export_credit']:,.2f} | Off-Peak Export: -${summary['offpeak_export_credit']:,.2f}"
+    )
+    c4.metric(
+        "Actual Net Bill", 
+        f"${summary['actual_net_cost']:,.2f}",
+        help="Gross Import Cost minus Solar Export Credits."
+    )
+    c5.metric(
+        "Total Net Savings", 
+        f"${summary['total_savings']:,.2f}", 
+        delta=f"{summary['savings_pct']:.1f}% Savings",
+        help="Baseline Cost minus Actual Net Bill."
+    )
 
     # 2. TOU Peak & Off-Peak Rate Verification Breakdown
     st.markdown("---")
