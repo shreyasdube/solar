@@ -7,21 +7,32 @@ DB_PATH = "data/enphase.db"
 RATES_PATH = "rates_schedule.csv"
 
 def load_energy_data(db_path=DB_PATH):
-    """Loads interval data from SQLite enphase_energy_data table."""
+    """Loads full interval data from SQLite enphase_energy_data table."""
     if not os.path.exists(db_path):
         return pd.DataFrame()
     conn = sqlite3.connect(db_path)
-    df = pd.read_sql("SELECT timestamp, consumed_wh, imported_wh FROM enphase_energy_data", conn)
+    
+    # Select all production, consumption, battery, and grid interval columns
+    query = """
+    SELECT timestamp, consumed_wh, imported_wh, produced_wh, exported_wh, battery_charge_wh, battery_discharge_wh 
+    FROM enphase_energy_data
+    """
+    try:
+        df = pd.read_sql(query, conn)
+    except Exception:
+        # Fallback if battery/export columns are optional or named slightly differently
+        df = pd.read_sql("SELECT * FROM enphase_energy_data", conn)
+        
     conn.close()
     if not df.empty:
-        # Parse datetime and convert to timezone-naive to match rates_schedule.csv
         df['Date/Time'] = pd.to_datetime(df['timestamp'], utc=True).dt.tz_localize(None)
         df = df.sort_values('Date/Time').drop_duplicates(subset=['Date/Time'])
     return df
 
 def apply_tariffs(df, rates_path=RATES_PATH):
-    """Maps seasonal TOU import tariffs to each 15-minute interval."""
+    """Maps seasonal TOU import/export tariffs to each interval."""
     df['import_rate'] = np.nan
+    df['export_rate'] = 0.0  # Default export credit rate (can be adjusted in rates_schedule.csv)
     df['is_peak'] = False
     
     if not os.path.exists(rates_path) or df.empty:
@@ -49,61 +60,66 @@ def apply_tariffs(df, rates_path=RATES_PATH):
         df.loc[peak_mask, 'import_rate'] = rate['import_on_peak']
         df.loc[off_peak_mask, 'import_rate'] = rate['import_off_peak']
         
+        # Export rate mapping (1:1 net metering or specific feed-in tariff)
+        if 'export_on_peak' in rate and 'export_off_peak' in rate:
+            df.loc[peak_mask, 'export_rate'] = rate['export_on_peak']
+            df.loc[off_peak_mask, 'export_rate'] = rate['export_off_peak']
+        
     return df
 
-def calculate_baseline(df):
-    """Calculates baseline consumption and cost."""
+def calculate_actual_bill(df):
+    """Calculates both baseline (no solar/battery) and actual net bill (with solar/battery)."""
     if df.empty:
         return df
     
-    # Wh to kWh
-    df['Consumed_kWh'] = df['consumed_wh'] / 1000.0
-    # Baseline Cost = Total Energy Consumed * Import Rate
+    # Conversion from Wh to kWh
+    df['Consumed_kWh'] = df.get('consumed_wh', 0) / 1000.0
+    df['Imported_kWh'] = df.get('imported_wh', 0) / 1000.0
+    df['Produced_kWh'] = df.get('produced_wh', 0) / 1000.0
+    df['Exported_kWh'] = df.get('exported_wh', 0) / 1000.0
+    df['Battery_Discharge_kWh'] = df.get('battery_discharge_wh', 0) / 1000.0
+    df['Battery_Charge_kWh'] = df.get('battery_charge_wh', 0) / 1000.0
+
+    # Baseline Cost (What you would pay without solar/battery)
     df['cost_baseline'] = df['Consumed_kWh'] * df['import_rate']
+    
+    # Actual Import Cost & Export Credit
+    df['cost_actual_import'] = df['Imported_kWh'] * df['import_rate']
+    df['credit_actual_export'] = df['Exported_kWh'] * df['export_rate']
+    
+    # Net Actual Cost
+    df['cost_actual_net'] = df['cost_actual_import'] - df['credit_actual_export']
+    
     return df
 
-def summarize_baseline(df):
-    """Calculates summary metrics and explicit rates applied for Peak and Off-Peak windows."""
+def summarize_actual_vs_baseline(df):
+    """Summarizes baseline vs actual bill metrics and total savings."""
     if df.empty:
         return {}
     
-    peak_mask = df['is_peak'] == True
-    offpeak_mask = df['is_peak'] == False
+    total_consumed_kwh = df['Consumed_kWh'].sum()
+    total_imported_kwh = df['Imported_kWh'].sum()
+    total_produced_kwh = df['Produced_kWh'].sum()
+    total_exported_kwh = df['Exported_kWh'].sum()
+    total_battery_discharged_kwh = df['Battery_Discharge_kWh'].sum()
 
-    peak_kwh = df.loc[peak_mask, 'Consumed_kWh'].sum()
-    offpeak_kwh = df.loc[offpeak_mask, 'Consumed_kWh'].sum()
-    total_kwh = df['Consumed_kWh'].sum()
-
-    peak_cost = df.loc[peak_mask, 'cost_baseline'].sum(skipna=True)
-    offpeak_cost = df.loc[offpeak_mask, 'cost_baseline'].sum(skipna=True)
-    total_cost = df['cost_baseline'].sum(skipna=True)
-
-    # Cast numpy floats to native Python floats for clean output formatting
-    peak_rates = [float(r) for r in sorted(df.loc[peak_mask, 'import_rate'].dropna().unique())]
-    offpeak_rates = [float(r) for r in sorted(df.loc[offpeak_mask, 'import_rate'].dropna().unique())]
+    baseline_cost = df['cost_baseline'].sum(skipna=True)
+    actual_import_cost = df['cost_actual_import'].sum(skipna=True)
+    actual_export_credit = df['credit_actual_export'].sum(skipna=True)
+    actual_net_cost = df['cost_actual_net'].sum(skipna=True)
+    
+    total_savings = baseline_cost - actual_net_cost
 
     return {
-        "total_kwh": total_kwh,
-        "peak_kwh": peak_kwh,
-        "offpeak_kwh": offpeak_kwh,
-        "total_cost": total_cost,
-        "peak_cost": peak_cost,
-        "offpeak_cost": offpeak_cost,
-        "effective_rate": total_cost / total_kwh if total_kwh > 0 else 0,
-        "peak_rates": peak_rates,
-        "offpeak_rates": offpeak_rates,
+        "consumed_kwh": total_consumed_kwh,
+        "imported_kwh": total_imported_kwh,
+        "produced_kwh": total_produced_kwh,
+        "exported_kwh": total_exported_kwh,
+        "battery_discharged_kwh": total_battery_discharged_kwh,
+        "baseline_cost": baseline_cost,
+        "actual_import_cost": actual_import_cost,
+        "actual_export_credit": actual_export_credit,
+        "actual_net_cost": actual_net_cost,
+        "total_savings": total_savings,
+        "savings_pct": (total_savings / baseline_cost * 100) if baseline_cost > 0 else 0
     }
-
-if __name__ == "__main__":
-    df = load_energy_data()
-    if not df.empty:
-        df = apply_tariffs(df)
-        df = calculate_baseline(df)
-        summary = summarize_baseline(df)
-        
-        print(f"Processed {len(df)} rows.")
-        print(f"Total Usage:    {summary['total_kwh']:,.1f} kWh | Cost: ${summary['total_cost']:,.2f}")
-        print(f"Peak Usage:     {summary['peak_kwh']:,.1f} kWh | Cost: ${summary['peak_cost']:,.2f} | Rates Used: {summary['peak_rates']}")
-        print(f"Off-Peak Usage: {summary['offpeak_kwh']:,.1f} kWh | Cost: ${summary['offpeak_cost']:,.2f} | Rates Used: {summary['offpeak_rates']}")
-    else:
-        print("No data found in database. Run db.py first.")
