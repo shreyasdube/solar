@@ -137,28 +137,45 @@ else:
 
     # 3. Daily Activity Visualization
     st.markdown("---")
-    st.subheader(f"Daily Actual Grid Activity Breakdown {timeframe_label}")
+    st.subheader("Daily Grid Activity Comparison")
+    
+    view_mode = st.radio(
+        "Select Daily View Mode:",
+        options=["Solar + Battery (Actual)", "Solar Only (Simulation)"],
+        horizontal=True
+    )
 
     df_filtered['Date'] = df_filtered['Date/Time'].dt.date
     df_filtered['Rate_Window'] = df_filtered['is_peak'].map({True: 'On-Peak', False: 'Off-Peak'})
 
-    daily_df = (
-        df_filtered.groupby(['Date', 'Rate_Window'])[['Imported_kWh', 'Exported_kWh']]
-        .sum()
-        .reset_index()
-    )
+    if view_mode == "Solar + Battery (Actual)":
+        daily_df = (
+            df_filtered.groupby(['Date', 'Rate_Window'])[['Imported_kWh', 'Exported_kWh']]
+            .sum()
+            .reset_index()
+        )
+        import_col, export_col = 'Imported_kWh', 'Exported_kWh'
+        chart_title = f"Daily Actual Grid Activity Breakdown (kWh) {timeframe_label}"
+    else:
+        daily_df = (
+            df_filtered.groupby(['Date', 'Rate_Window'])[['Solar_Only_Import_kWh', 'Solar_Only_Export_kWh']]
+            .sum()
+            .reset_index()
+        )
+        import_col, export_col = 'Solar_Only_Import_kWh', 'Solar_Only_Export_kWh'
+        chart_title = f"Daily Simulated Solar-Only Grid Activity Breakdown (kWh) {timeframe_label}"
 
     daily_melted = pd.melt(
         daily_df,
         id_vars=['Date', 'Rate_Window'],
-        value_vars=['Imported_kWh', 'Exported_kWh'],
+        value_vars=[import_col, export_col],
         var_name='Type',
         value_name='kWh'
     )
 
     daily_melted['Category'] = daily_melted['Rate_Window'] + " " + daily_melted['Type'].map({
-        'Imported_kWh': 'Import',
-        'Exported_kWh': 'Solar Export'
+        import_col: 'Import',
+        export_col: 'Solar Export'
     })
 
     fig = px.bar(
@@ -172,7 +189,7 @@ else:
             "On-Peak Solar Export": "#FFA15A", # Orange
             "Off-Peak Solar Export": "#00CC96" # Green
         },
-        title=f"Daily Grid Activity Breakdown (kWh) {timeframe_label}",
+        title=chart_title,
         labels={"kWh": "Energy (kWh)", "Date": "Date"},
         barmode="stack"
     )
