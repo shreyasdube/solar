@@ -43,7 +43,6 @@ def apply_tariffs_to_df(df, rates_df):
         df.loc[peak_mask, 'import_rate'] = rate['import_on_peak']
         df.loc[off_peak_mask, 'import_rate'] = rate['import_off_peak']
         
-        # Apply export rates if present in the schedule
         if 'export_rate' in rate and pd.notna(rate['export_rate']):
             df.loc[combined_mask, 'export_rate'] = rate['export_rate']
 
@@ -79,13 +78,11 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
 
     raw_df = pd.concat(frames, ignore_index=True)
 
-    # Find and standardize timestamp column
     ts_col = [c for c in raw_df.columns if 'date' in c.lower() or 'time' in c.lower()][0]
     raw_df['timestamp'] = pd.to_datetime(raw_df[ts_col], errors='coerce')
     if raw_df['timestamp'].dt.tz is not None:
         raw_df['timestamp'] = raw_df['timestamp'].dt.tz_localize(None)
 
-    # Standardize remaining column names
     col_map = {}
     for c in raw_df.columns:
         clow = c.lower()
@@ -93,18 +90,14 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
         elif 'produce' in clow: col_map[c] = 'produced_wh'
         elif 'import' in clow: col_map[c] = 'imported_wh'
         elif 'export' in clow: col_map[c] = 'exported_wh'
-        elif 'store' in clow: col_map[c] = 'stored_wh'
+        elif 'stored' in clow: col_map[c] = 'stored_wh'
         elif 'discharge' in clow or 'disched' in clow: col_map[c] = 'discharged_wh'
 
     raw_df = raw_df.rename(columns=col_map)
     raw_df = raw_df.sort_values('timestamp').drop_duplicates(subset=['timestamp'])
 
-    # Apply rates and tariffs
     processed_df = apply_tariffs_to_df(raw_df, rates_df)
 
-    # ==========================================
-    # PRE-CALCULATE HELPER & SCENARIO COLUMNS
-    # ==========================================
     # 1. Base Unit Conversions (Wh to kWh)
     processed_df['Consumed_kWh'] = processed_df.get('consumed_wh', 0.0) / 1000.0
     processed_df['Produced_kWh'] = processed_df.get('produced_wh', 0.0) / 1000.0
@@ -129,11 +122,27 @@ def ingest_csv_files(data_dir=DATA_DIR, db_path=DB_PATH):
     processed_df['cost_solar_only_net'] = processed_df['cost_solar_only_import'] - processed_df['credit_solar_only_export']
 
     # 5. Battery Only Simulation (Arbitrage Only, No Solar)
-    processed_df['Battery_Only_Discharged_kWh'] = np.where(processed_df['is_peak'], processed_df['Discharged_kWh'], 0.0)
+    ROUND_TRIP_EFFICIENCY = 0.90  # 90% combined efficiency for charge + discharge cycles
+
+    processed_df['Battery_Only_Discharged_kWh'] = np.where(
+        processed_df['is_peak'], 
+        processed_df['Discharged_kWh'], 
+        0.0
+    )
+
+    total_discharged_peak = processed_df['Battery_Only_Discharged_kWh'].sum()
+    offpeak_mask = processed_df['is_peak'] == False
+    num_offpeak_intervals = offpeak_mask.sum()
+
+    processed_df['Battery_Only_Charging_kWh'] = 0.0
+    if num_offpeak_intervals > 0 and total_discharged_peak > 0:
+        energy_needed_per_offpeak_interval = (total_discharged_peak / ROUND_TRIP_EFFICIENCY) / num_offpeak_intervals
+        processed_df.loc[offpeak_mask, 'Battery_Only_Charging_kWh'] = energy_needed_per_offpeak_interval
+
     processed_df['Battery_Only_Import_kWh'] = np.where(
         processed_df['is_peak'],
         (processed_df['Consumed_kWh'] - processed_df['Battery_Only_Discharged_kWh']).clip(lower=0),
-        processed_df['Consumed_kWh']
+        processed_df['Consumed_kWh'] + processed_df['Battery_Only_Charging_kWh']
     )
     processed_df['cost_battery_only'] = processed_df['Battery_Only_Import_kWh'] * processed_df['import_rate']
 
