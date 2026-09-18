@@ -5,6 +5,7 @@ from engine import (
     load_energy_data,
     calculate_scenarios,
     summarize_actual_vs_baseline,
+    load_srec_data,
 )
 
 st.set_page_config(page_title="Belmont Energy Monitor", layout="wide")
@@ -32,6 +33,7 @@ else:
 
     # Compute overall and monthly summaries
     full_summary = summarize_actual_vs_baseline(df)
+    total_srec_earned, annual_srec_earned, srec_df = load_srec_data()
     
     # Sidebar Month Filter
     st.sidebar.header("Filter View")
@@ -85,10 +87,11 @@ else:
 
     # 2. Detailed Scenario Breakdown Tabs
     st.markdown("---")
-    tab_actual, tab_solar_only, tab_roi = st.tabs([
+    tab_actual, tab_solar_only, tab_roi, tab_srec = st.tabs([
         "🔋 Solar + Battery (Actual)", 
         "☀️ Solar Only (Simulation)", 
-        "📈 ROI & Payback Analysis"
+        "📈 ROI & Payback Analysis",
+        "📜 SREC Credits & Revenue"
     ])
 
     with tab_actual:
@@ -121,19 +124,36 @@ else:
 
     with tab_roi:
         st.subheader("Financial Return on Investment (ROI) & Simple Payback")
+        st.caption("✨ Note: ROI and Payback calculations include both utility bill savings and SREC renewable certificate earnings.")
         r1, r2 = st.columns(2)
         
         with r1:
             st.markdown("### ☀️ Solar Array Only")
             st.metric("Estimated ROI", f"{summary['solar_roi_pct']:.2f}% / year")
             st.metric("Simple Payback Period", f"{summary['solar_payback_yrs']:.1f} Years")
-            st.caption("Based on standard solar array capital investment defaults.")
+            st.caption("Based on standard solar array capital investment defaults + SRECs.")
 
         with r2:
             st.markdown("### 🔋 Solar + Battery Combined")
             st.metric("Estimated ROI", f"{summary['combined_roi_pct']:.2f}% / year")
             st.metric("Simple Payback Period", f"{summary['combined_payback_yrs']:.1f} Years")
-            st.caption("Based on combined solar array and battery storage investment defaults.")
+            st.caption("Based on combined system capital investment defaults + SRECs.")
+
+    with tab_srec:
+        st.subheader("Solar Renewable Energy Certificate (SREC) Tracking")
+        
+        s1, s2, s3 = st.columns(3)
+        s1.metric("Total SREC Revenue Earned", f"${total_srec_earned:,.2f}")
+        s2.metric("Total RECs Sold", f"{srec_df['quantity'].sum() if not srec_df.empty else 0:,.1f}")
+        avg_price = srec_df['price'].mean() if not srec_df.empty else 0.0
+        s3.metric("Average Sale Price / REC", f"${avg_price:,.2f}")
+
+        st.markdown("---")
+        st.markdown("### 📋 SREC Transaction History (`srec_history.csv`)")
+        if not srec_df.empty:
+            st.dataframe(srec_df, use_container_width=True)
+        else:
+            st.info("No `srec_history.csv` found in the project directory.")
 
     # 3. Daily Activity Visualization
     st.markdown("---")
