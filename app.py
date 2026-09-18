@@ -12,8 +12,7 @@ st.title("Belmont Energy: Baseline vs. Solar vs. Battery Simulation")
 
 @st.cache_data
 def get_processed_data():
-    df = load_energy_data()
-    return df
+    return load_energy_data()
 
 df = get_processed_data()
 
@@ -70,7 +69,7 @@ else:
         f"${summary['battery_only_net_cost']:,.2f}",
         delta=f"-${summary['battery_only_savings']:,.2f} vs Base",
         delta_color="inverse",
-        help="Simulated cost with battery arbitrage only and no solar generation."
+        help="Simulated cost with battery arbitrage only and no solar generation (accounting for off-peak charging)."
     )
     c4.metric(
         "Solar + Battery Net Cost",
@@ -141,7 +140,7 @@ else:
         st.subheader("Solar Renewable Energy Certificate (SREC) Tracking")
         s1, s2, s3 = st.columns(3)
         s1.metric("Total SREC Revenue Earned", f"${total_srec_earned:,.2f}")
-        s2.metric("Total RECs Sold", f"{srec_df['quantity'].sum() if not srec_df.empty else 0:,.1f}")
+        s2.metric("Total RECs Sold", f"{srec_df['quantity'].sum() if not srec_df.empty and 'quantity' in srec_df.columns else 0:,.1f}")
         s3.metric("Annualized SREC Rate", f"${annual_srec_earned:,.2f} / year")
 
         if not srec_df.empty:
