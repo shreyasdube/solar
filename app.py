@@ -60,36 +60,38 @@ else:
     c1, c2, c3, c4 = st.columns(4)
     
     c1.metric(
-        "Baseline Cost (No Solar)", 
+        "Baseline Cost (No Solar/Bat)", 
         f"${summary['baseline_cost']:,.2f}",
         help="Estimated cost if 100% of consumption was imported from the grid with no solar or battery."
     )
     c2.metric(
+        "Battery Only Net Cost", 
+        f"${summary['battery_only_net_cost']:,.2f}",
+        delta=f"-${summary['battery_only_savings']:,.2f} vs Base",
+        delta_color="inverse",
+        help="Simulated cost with battery arbitrage only (no solar panels)."
+    )
+    c3.metric(
         "Solar Only Net Cost", 
         f"${summary['solar_only_net_cost']:,.2f}",
         delta=f"-${summary['solar_only_savings']:,.2f} vs Base",
         delta_color="inverse",
         help="Simulated cost with solar panels only and no home battery storage."
     )
-    c3.metric(
+    c4.metric(
         "Solar + Battery Net Cost", 
         f"${summary['actual_net_cost']:,.2f}",
         delta=f"-${summary['total_savings']:,.2f} vs Base",
         delta_color="inverse",
         help="Actual cost with both solar generation and your Enphase battery system."
     )
-    c4.metric(
-        "Battery Added Value", 
-        f"${summary['battery_added_savings']:,.2f}",
-        delta="Additional savings from battery",
-        help="Extra savings achieved by the battery above the solar-only setup."
-    )
 
     # 2. Detailed Scenario Breakdown Tabs
     st.markdown("---")
-    tab_actual, tab_solar_only, tab_roi, tab_srec = st.tabs([
+    tab_actual, tab_solar_only, tab_battery_only, tab_roi, tab_srec = st.tabs([
         "🔋 Solar + Battery (Actual)", 
-        "☀️ Solar Only (Simulation)", 
+        "☀️ Solar Only (Simulation)",
+        "⚡ Battery Only (Simulation)", 
         "📈 ROI & Payback Analysis",
         "📜 SREC Credits & Revenue"
     ])
@@ -121,6 +123,20 @@ else:
             st.markdown("🔵 **Off-Peak Summary (Solar Only)**")
             st.metric("Grid Import", f"{summary['offpeak_so_import_kwh']:,.1f} kWh", f"${summary['offpeak_so_import_cost']:,.2f}")
             st.metric("Solar Export", f"{summary['offpeak_so_export_kwh']:,.1f} kWh", f"-${summary['offpeak_so_export_credit']:,.2f}")
+
+    with tab_battery_only:
+        st.subheader(f"Battery-Only (Arbitrage, No Solar) Simulation Breakdown {timeframe_label}")
+        col_bo1, col_bo2 = st.columns(2)
+        
+        with col_bo1:
+            st.markdown("🔴 **On-Peak Summary (Battery Only)**")
+            st.metric("Grid Import", f"{summary['peak_bo_import_kwh']:,.1f} kWh", f"${summary['peak_bo_import_cost']:,.2f}")
+            st.metric("Arbitrage Savings vs Base", f"${summary['battery_only_savings']:,.2f}")
+
+        with col_bo2:
+            st.markdown("📈 **Standalone Battery Economics**")
+            st.metric("Estimated Battery-Only ROI", f"{summary['battery_only_roi_pct']:.2f}% / year")
+            st.metric("Simple Payback Period", f"{summary['battery_only_payback_yrs']:.1f} Years")
 
     with tab_roi:
         st.subheader("Financial Return on Investment (ROI) & Simple Payback")
@@ -161,7 +177,7 @@ else:
     
     view_mode = st.radio(
         "Select Daily View Mode:",
-        options=["Solar + Battery (Actual)", "Solar Only (Simulation)"],
+        options=["Solar + Battery (Actual)", "Solar Only (Simulation)", "Battery Only (Simulation)"],
         horizontal=True
     )
 
@@ -176,7 +192,7 @@ else:
         )
         import_col, export_col = 'Imported_kWh', 'Exported_kWh'
         chart_title = f"Daily Actual Grid Activity Breakdown (kWh) {timeframe_label}"
-    else:
+    elif view_mode == "Solar Only (Simulation)":
         daily_df = (
             df_filtered.groupby(['Date', 'Rate_Window'])[['Solar_Only_Import_kWh', 'Solar_Only_Export_kWh']]
             .sum()
@@ -184,6 +200,15 @@ else:
         )
         import_col, export_col = 'Solar_Only_Import_kWh', 'Solar_Only_Export_kWh'
         chart_title = f"Daily Simulated Solar-Only Grid Activity Breakdown (kWh) {timeframe_label}"
+    else:
+        daily_df = (
+            df_filtered.groupby(['Date', 'Rate_Window'])[['Battery_Only_Import_kWh']]
+            .sum()
+            .reset_index()
+        )
+        daily_df['Exported_kWh'] = 0.0
+        import_col, export_col = 'Battery_Only_Import_kWh', 'Exported_kWh'
+        chart_title = f"Daily Simulated Battery-Only Grid Imports (kWh) {timeframe_label}"
 
     daily_melted = pd.melt(
         daily_df,
