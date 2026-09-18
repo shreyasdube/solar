@@ -3,7 +3,6 @@ import plotly.express as px
 import pandas as pd
 from engine import (
     load_energy_data,
-    apply_tariffs,
     calculate_actual_bill,
     summarize_actual_vs_baseline,
 )
@@ -16,7 +15,6 @@ st.title("Belmont Energy: Baseline vs. Actual Bill")
 def get_processed_data():
     df = load_energy_data()
     if not df.empty:
-        df = apply_tariffs(df)
         df = calculate_actual_bill(df)
     return df
 
@@ -55,7 +53,7 @@ else:
         summary = full_summary
         timeframe_label = "(All Months)"
 
-    # 1. High Level Bill Summary (Updated to 5 metric cards)
+    # 1. High Level Bill Summary
     st.markdown(f"### 💰 Baseline vs. Actual Bill Summary {timeframe_label}")
     c1, c2, c3, c4, c5 = st.columns(5)
     
