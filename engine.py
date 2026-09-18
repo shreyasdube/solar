@@ -18,7 +18,10 @@ def load_srec_data(csv_path=SREC_CSV_PATH):
         df = pd.read_csv(csv_path)
         if 'date' in df.columns:
             df['date'] = pd.to_datetime(df['date'])
-        total_earned = df['total_value'].sum() if 'total_value' in df.columns else 0.0
+        
+        # Support either total_value or total_sales column naming safely
+        val_col = 'total_value' if 'total_value' in df.columns else 'total_sales'
+        total_earned = df[val_col].sum() if val_col in df.columns else 0.0
         
         if 'date' in df.columns and not df['date'].isna().all():
             days = (df['date'].max() - df['date'].min()).days
@@ -96,7 +99,7 @@ def summarize_slice(df):
     battery_only_roi_pct = (battery_only_annual_savings / BATTERY_SYSTEM_COST) * 100 if BATTERY_SYSTEM_COST > 0 else 0
     battery_only_payback_yrs = BATTERY_SYSTEM_COST / battery_only_annual_savings if battery_only_annual_savings > 0 else float('inf')
 
-    # Detailed breakdown metrics (Actual)
+    # Detailed breakdown metrics (Actual Solar + Battery)
     peak_import_kwh = df.loc[peak_mask, 'Imported_kWh'].sum()
     peak_import_cost = df.loc[peak_mask, 'cost_actual_import'].sum()
     peak_export_kwh = df.loc[peak_mask, 'Exported_kWh'].sum()
