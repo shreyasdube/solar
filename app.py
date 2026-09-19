@@ -50,3 +50,9 @@ else:
 
     st.subheader("📅 Monthly Cost Breakdown")
     st.dataframe(monthly_costs, use_container_width=True)
+
+    st.divider()
+
+    st.subheader("📈 Monthly Cost Trajectory")
+    st.markdown("Track and compare how your utility bills fluctuate over time across each setup.")
+    st.line_chart(monthly_costs, height=400)
