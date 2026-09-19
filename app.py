@@ -174,8 +174,18 @@ burndown_df['SREC Revenue'] = srec_monthly.reindex(burndown_df.index, fill_value
 burndown_df['Total Monthly Recovery'] = burndown_df['Utility Savings'] + burndown_df['SREC Revenue']
 burndown_df['Unrecovered Balance ($)'] = solar_battery_cost_input - burndown_df['Total Monthly Recovery'].cumsum()
 
-# Plot the clean, strictly chronological balance curve using datetime indices
-st.bar_chart(burndown_df[['Unrecovered Balance ($)']], height=300)
+# Create 2 columns for a compact, rich side-by-side story
+burn_col1, burn_col2 = st.columns(2)
+
+with burn_col1:
+    st.markdown("#### 🔄 Monthly Cash Engine Components")
+    # Passing a list of columns to st.bar_chart automatically stacks them in Streamlit!
+    st.bar_chart(burndown_df[['Utility Savings', 'SREC Revenue']], height=300, stack=True)
+
+with burn_col2:
+    st.markdown("#### 📉 Remaining Capital Paydown")
+    # Kept as a line chart to cleanly show the downward trajectory toward $0
+    st.bar_chart(burndown_df[['Unrecovered Balance ($)']], height=300)
 
 st.divider()
 
