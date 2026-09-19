@@ -75,7 +75,7 @@ payback_solar_battery = 40000.0 / savings_solar_battery if savings_solar_battery
 
 track_col1, track_col2, track_col3 = st.columns(3)
 with track_col1:
-    st.markdown("#### ☀️ Solar Only Track"
+    st.markdown("#### ☀️ Solar Only Track")
     st.metric("Net Upfront Cost", "$22,000.00")
     st.metric("Annualized Return", f"${savings_solar:,.2f}")
     st.metric("Payback Window", f"{payback_solar:.1f} Years" if payback_solar else "No Payback")
