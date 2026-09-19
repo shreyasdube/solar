@@ -24,17 +24,27 @@ else:
     monthly_costs = monthly_costs.reindex(months.unique())
     monthly_costs = monthly_costs.rename(columns=cost_columns)
     
+    base_total = monthly_costs['Baseline ($)'].sum()
+    solar_total = monthly_costs['Solar Only ($)'].sum()
+    battery_total = monthly_costs['Battery Only ($)'].sum()
+    solar_battery_total = monthly_costs['Solar + Battery ($)'].sum()
+
+    # Formula: ((Asset Total - Baseline Total) / Baseline Total) * 100
+    solar_pct_diff = ((solar_total - base_total) / base_total) * 100 if base_total else 0
+    battery_pct_diff = ((battery_total - base_total) / base_total) * 100 if base_total else 0
+    solar_battery_pct_diff = ((solar_battery_total - base_total) / base_total) * 100 if base_total else 0
+
     st.subheader("📊 Total Cumulative Costs")
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric(label="Baseline Total", value=f"${monthly_costs['Baseline ($)'].sum():,.2f}")
+        st.metric(label="Baseline Total", value=f"${base_total:,.2f}")
     with col2:
-        st.metric(label="Solar Only Total", value=f"${monthly_costs['Solar Only ($)'].sum():,.2f}")
+        st.metric(label="Solar Only Total", value=f"${solar_total:,.2f}", delta=f"{solar_pct_diff:.1f}% vs baseline", delta_color="inverse")
     with col3:
-        st.metric(label="Battery Only Total", value=f"${monthly_costs['Battery Only ($)'].sum():,.2f}")
+        st.metric(label="Battery Only Total", value=f"${battery_total:,.2f}", delta=f"{battery_pct_diff:.1f}% vs baseline", delta_color="inverse")
     with col4:
-        st.metric(label="Solar + Battery Total", value=f"${monthly_costs['Solar + Battery ($)'].sum():,.2f}")
+        st.metric(label="Solar + Battery Total", value=f"${solar_battery_total:,.2f}", delta=f"{solar_battery_pct_diff:.1f}% vs baseline", delta_color="inverse")
         
     st.divider()
 
