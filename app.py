@@ -175,7 +175,7 @@ burndown_df['Total Monthly Recovery'] = burndown_df['Utility Savings'] + burndow
 burndown_df['Unrecovered Balance ($)'] = solar_battery_cost_input - burndown_df['Total Monthly Recovery'].cumsum()
 
 # Plot the clean, strictly chronological balance curve using datetime indices
-st.line_chart(burndown_df[['Unrecovered Balance ($)']], height=300)
+st.bar_chart(burndown_df[['Unrecovered Balance ($)']], height=300)
 
 st.divider()
 
