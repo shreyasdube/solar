@@ -20,8 +20,10 @@ def run_financial_analysis():
     analysis_df['timestamp'] = df['timestamp']
     analysis_df['is_peak'] = df['is_peak']
     analysis_df['import_rate'] = df['import_rate']
+    analysis_df['export_rate'] = df['export_rate']
 
     analysis_df = calculate_baseline(df, analysis_df)
+    analysis_df = calculate_solar_battery(df, analysis_df)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     analysis_df.to_csv(OUTPUT_FILE, index=False)
@@ -51,6 +53,37 @@ def calculate_baseline(df, analysis_df):
         print(f"   Total Cost   : {summary.loc[month, 'baseline_import_wh'].sum():10.2f} kWh  |  Cost: ${summary.loc[month, 'baseline_cost'].sum():8.2f}")
         print(f"     └─ Peak    : {summary.loc[(month, True), 'baseline_import_wh']:10.2f} kWh  |  Cost: ${summary.loc[(month, True), 'baseline_cost']:7.2f}")
         print(f"     └─ Off-Peak: {summary.loc[(month, False), 'baseline_import_wh']:10.2f} kWh  |  Cost: ${summary.loc[(month, False), 'baseline_cost']:7.2f}")
+        print(f"-------------------------------------------------------")
+
+    return analysis_df
+
+def calculate_solar_battery(df, analysis_df):
+    """
+    Calculates the real-world financial performance of your combined Solar + Battery setup.
+    Formula: Net Cost = (Imported Energy Cost) - (Exported Solar Credits)
+    """
+    actual_import_cost = (df['imported_wh'] / 1000.0) * df['import_rate']
+    actual_export_credit = (df['exported_wh'] / 1000.0) * df['export_rate']
+    
+    analysis_df['net_import_wh'] = df['imported_wh'] - df['exported_wh']
+    analysis_df['net_cost'] = (actual_import_cost - actual_export_credit).round(4)
+
+    cols_to_sum = ['net_import_wh', 'net_cost']
+    months = pd.to_datetime(analysis_df['timestamp']).dt.strftime('%b %Y')
+    summary = analysis_df.groupby([months, 'is_peak'])[cols_to_sum].sum() / [1000.0, 1.0]
+
+    print(f"\n==============================================")
+    print(f"    ACTUAL SOLAR+BATTERY PERFORMANCE METRICS  ")
+    print(f"==============================================")
+    for month in summary.index.get_level_values(0).unique():
+        total_cost = summary.loc[month, 'net_cost'].sum()
+        peak_cost = summary.loc[(month, True), 'net_cost']
+        off_peak_cost = summary.loc[(month, False), 'net_cost']
+
+        print(f"{month}:")
+        print(f"   Total Net    : {summary.loc[month, 'net_import_wh'].sum():10.2f} kWh  |  Net: ${total_cost:7.2f}")
+        print(f"     └─ Peak    : {summary.loc[(month, True), 'net_import_wh']:10.2f} kWh  |  Net: ${peak_cost:7.2f}")
+        print(f"     └─ Off-Peak: {summary.loc[(month, False), 'net_import_wh']:10.2f} kWh  |  Net: ${off_peak_cost:7.2f}")
         print(f"-------------------------------------------------------")
 
     return analysis_df
