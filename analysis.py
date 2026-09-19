@@ -87,7 +87,7 @@ def calculate_solar_battery(df, analysis_df):
         total_net_kwh = summary.loc[month, 'solar_battery_net_kwh'].sum()
         total_net_cost = summary.loc[month, 'solar_battery_net_cost'].sum()
 
-        print(f"📊 {month}:")
+        print(f"{month}:")
         print(f"   Total Net Summary : {total_net_kwh:10.2f} kWh  |  Net Bill: ${total_net_cost:7.2f}")
         print(f"     ├─ [PEAK WINDOW]")
         print(f"     │    ├── Import : {p_row['solar_battery_import_kwh']:10.2f} kWh  |  Cost  : ${p_row['solar_battery_import_cost']:7.2f}")
