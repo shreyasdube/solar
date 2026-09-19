@@ -148,6 +148,31 @@ with track_col3:
 
 st.divider()
 
+# 6b. Interactive Solar + Battery ROI Burndown Tracking
+st.subheader("📉 Investment Payback Burndown")
+st.markdown("Track the real-time path to breaking even. This maps monthly utility savings and exact SREC payout dates against your custom setup cost.")
+
+# Create an accurate month-by-month framework from the existing monthly_costs index
+burndown_df = pd.DataFrame(index=monthly_costs.index)
+
+# Calculate monthly operational bill savings vs Baseline
+burndown_df['Utility Savings'] = monthly_costs['Baseline ($)'] - monthly_costs['Solar + Battery ($)']
+
+# Match and group actual SREC cash history events onto the timeline index
+srec_monthly = srec_df.groupby(srec_df['date'].dt.strftime('%b %Y'))['total_sales'].sum()
+burndown_df['SREC Revenue'] = srec_monthly.reindex(burndown_df.index, fill_value=0.0)
+
+# Calculate total monthly recovery yields
+burndown_df['Total Monthly Recovery'] = burndown_df['Utility Savings'] + burndown_df['SREC Revenue']
+
+# Build the burndown trajectory: Upfront Cost - Cumulative recovery values
+burndown_df['Unrecovered Balance ($)'] = solar_battery_cost_input - burndown_df['Total Monthly Recovery'].cumsum()
+
+# Render the interactive line chart tracing the asset balance decay curve
+st.line_chart(burndown_df[['Unrecovered Balance ($)']], height=300)
+
+st.divider()
+
 # 7. Render SREC Ledger Visualization Row
 st.subheader("📜 Solar Renewable Energy Certificates (SREC) Ledger")
 srec_left, srec_right = st.columns([1, 2])
