@@ -15,7 +15,7 @@ def run_financial_analysis():
         return
 
     df = pd.read_csv(INPUT_FILE)
-  
+
     analysis_df = pd.DataFrame()
     analysis_df['timestamp'] = df['timestamp']
     analysis_df['is_peak'] = df['is_peak']
@@ -25,11 +25,10 @@ def run_financial_analysis():
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     analysis_df.to_csv(OUTPUT_FILE, index=False)
-    
-    # 6. Display Baseline Summaries
+
     total_kwh = analysis_df['baseline_import_wh'].sum() / 1000.0
     total_cost = analysis_df['baseline_cost'].sum()
-    
+
     print(f"Analysis successfully written to: {OUTPUT_FILE}")
     print(f"--- Baseline Performance Metrics ---")
     print(f"Total Consumption: {total_kwh:.2f} kWh")
@@ -43,7 +42,9 @@ def calculate_baseline(df, analysis_df):
     Formula: baseline_import = consumed_wh - stored_wh
     """
     analysis_df['baseline_import_wh'] = (df['consumed_wh'] - df['stored_wh']).clip(lower=0)
-    
+    analysis_df['baseline_cost'] = (analysis_df['baseline_import_wh'] / 1000.0) * df['import_rate']
+    analysis_df['baseline_cost'] = analysis_df['baseline_cost'].round(4)
+
     return analysis_df
 
 if __name__ == "__main__":
