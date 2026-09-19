@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  energy-dashboard:
+    image: python:3.11-slim
+    container_name: energy_dashboard
+    working_dir: /app
+    volumes:
+      - .:/app
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    command: >
+      sh -c "pip install --no-cache-dir streamlit pandas && 
+             streamlit run app.py --server.port=8501 --server.address=0.0.0.0"
+    restart: unless-stopped
