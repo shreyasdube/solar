@@ -24,6 +24,7 @@ def run_financial_analysis():
 
     analysis_df = calculate_baseline(df, analysis_df)
     analysis_df = calculate_solar_only(df, analysis_df)
+    analysis_df = calculate_battery_only(df, analysis_df)
     analysis_df = calculate_solar_battery(df, analysis_df)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -117,6 +118,45 @@ def calculate_solar_only(df, analysis_df):
 
     return analysis_df
     
+
+def calculate_battery_only(df, analysis_df):
+    """
+    Calculates performance as if the home had a battery storage system but NO solar panels.
+    Simplified Shift: Dumps the entire daily battery charging load into the midnight (00:00) 
+    hour, which is guaranteed to be a cheap Off-Peak window across all utility schedules.
+    """
+    house_demand_wh = analysis_df['baseline_import_kwh'] * 1000.0
+    timestamps = pd.to_datetime(analysis_df['timestamp'])
+    daily_stored_wh = df.groupby(timestamps.dt.date)['stored_wh'].transform('sum')
+    optimized_charge_wh = daily_stored_wh.where(timestamps.dt.hour == 0, 0.0)
+    simulated_imports_wh = house_demand_wh + optimized_charge_wh - df['discharged_wh']
+
+    analysis_df['battery_only_import_kwh'] = (simulated_imports_wh.clip(lower=0) / 1000.0).round(4)
+    analysis_df['battery_only_import_cost'] = (analysis_df['battery_only_import_kwh'] * df['import_rate']).round(4)
+
+    cols_to_sum = ['battery_only_import_kwh', 'battery_only_import_cost']
+    months = timestamps.dt.strftime('%b %Y')
+    summary = analysis_df.groupby([months, 'is_peak'])[cols_to_sum].sum()
+
+    print(f"\n=======================================================")
+    print(f"     SIMULATED SMART BATTERY-ONLY PERFORMANCE METRICS  ")
+    print(f"=======================================================")
+    for month in summary.index.get_level_values(0).unique():
+        p_import_kwh  = summary.loc[(month, True), 'battery_only_import_kwh']
+        p_import_cost = summary.loc[(month, True), 'battery_only_import_cost']
+        op_import_kwh  = summary.loc[(month, False), 'battery_only_import_kwh']
+        op_import_cost = summary.loc[(month, False), 'battery_only_import_cost']
+
+        print(f"{month}:")
+        print(f"   Total Summary     : {p_import_kwh + op_import_kwh:10.2f} kWh  |  Total Cost: ${p_import_cost + op_import_cost:7.2f}")
+        print(f"     ├─ [PEAK WINDOW]")
+        print(f"     │    └── Import : {p_import_kwh:10.2f} kWh  |  Cost      : ${p_import_cost:7.2f}")
+        print(f"     └─ [OFF-PEAK WINDOW]")
+        print(f"          └── Import : {op_import_kwh:10.2f} kWh  |  Cost      : ${op_import_cost:7.2f}")
+        print(f"-------------------------------------------------------")
+
+    return analysis_df
+
 
 def calculate_solar_battery(df, analysis_df):
     """
