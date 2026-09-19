@@ -29,38 +29,36 @@ def run_financial_analysis():
     analysis_df.to_csv(OUTPUT_FILE, index=False)
 
     print(f"Analysis successfully written to: {OUTPUT_FILE}")
-    print(f"\nData Preview:")
-    print(analysis_df.head(4).to_string(index=False))
+
 
 def calculate_baseline(df, analysis_df):
     """
     Calculates baseline metrics as if the home had no solar or battery systems.
     Formula: baseline_import = consumed_wh - stored_wh
     """
-    analysis_df['baseline_import_wh'] = (df['consumed_wh'] - df['stored_wh']).clip(lower=0)
-    analysis_df['baseline_cost'] = (analysis_df['baseline_import_wh'] / 1000.0) * df['import_rate']
-    analysis_df['baseline_cost'] = analysis_df['baseline_cost'].round(4)
+    analysis_df['baseline_import_kwh'] = ((df['consumed_wh'] - df['stored_wh']).clip(lower=0) / 1000.0).round(4)
+    analysis_df['baseline_cost'] = (analysis_df['baseline_import_kwh'] * df['import_rate']).round(4)
 
-    cols_to_sum = ['baseline_import_wh', 'baseline_cost']
+    cols_to_sum = ['baseline_import_kwh', 'baseline_cost']
     months = pd.to_datetime(analysis_df['timestamp']).dt.strftime('%b %Y')
-    summary = analysis_df.groupby([months, 'is_peak'])[cols_to_sum].sum() / [1000.0, 1.0]
+    summary = analysis_df.groupby([months, 'is_peak'])[cols_to_sum].sum()
 
     print(f"\n==============================================")
     print(f"       BASELINE PERFORMANCE METRICS           ")
     print(f"==============================================")
     for month in summary.index.get_level_values(0).unique():
         print(f"{month}:")
-        print(f"   Total Cost   : {summary.loc[month, 'baseline_import_wh'].sum():10.2f} kWh  |  Cost: ${summary.loc[month, 'baseline_cost'].sum():8.2f}")
-        print(f"     └─ Peak    : {summary.loc[(month, True), 'baseline_import_wh']:10.2f} kWh  |  Cost: ${summary.loc[(month, True), 'baseline_cost']:7.2f}")
-        print(f"     └─ Off-Peak: {summary.loc[(month, False), 'baseline_import_wh']:10.2f} kWh  |  Cost: ${summary.loc[(month, False), 'baseline_cost']:7.2f}")
+        print(f"   Total Cost   : {summary.loc[month, 'baseline_import_kwh'].sum():10.2f} kWh  |  Cost: ${summary.loc[month, 'baseline_cost'].sum():8.2f}")
+        print(f"     └─ Peak    : {summary.loc[(month, True), 'baseline_import_kwh']:10.2f} kWh  |  Cost: ${summary.loc[(month, True), 'baseline_cost']:7.2f}")
+        print(f"     └─ Off-Peak: {summary.loc[(month, False), 'baseline_import_kwh']:10.2f} kWh  |  Cost: ${summary.loc[(month, False), 'baseline_cost']:7.2f}")
         print(f"-------------------------------------------------------")
 
     return analysis_df
 
+
 def calculate_solar_battery(df, analysis_df):
     """
     Calculates the real-world financial performance of your combined Solar + Battery setup.
-    Formula: Net Cost = (Imported Energy Cost) - (Exported Solar Credits)
     """
     analysis_df['solar_battery_import_kwh'] = (df['imported_wh'] / 1000.0).round(4)
     analysis_df['solar_battery_export_kwh'] = (df['exported_wh'] / 1000.0).round(4)
@@ -77,9 +75,9 @@ def calculate_solar_battery(df, analysis_df):
     months = pd.to_datetime(analysis_df['timestamp']).dt.strftime('%b %Y')
     summary = analysis_df.groupby([months, 'is_peak'])[cols_to_sum].sum()
 
-    print(f"\n==============================================")
+    print(f"\n=======================================================")
     print(f"       SOLAR+BATTERY PERFORMANCE METRICS  ")
-    print(f"==============================================")
+    print(f"=======================================================")
     for month in summary.index.get_level_values(0).unique():
         p_row = summary.loc[(month, True)]
         op_row = summary.loc[(month, False)]
