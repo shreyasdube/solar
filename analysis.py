@@ -26,13 +26,7 @@ def run_financial_analysis():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     analysis_df.to_csv(OUTPUT_FILE, index=False)
 
-    total_kwh = analysis_df['baseline_import_wh'].sum() / 1000.0
-    total_cost = analysis_df['baseline_cost'].sum()
-
     print(f"Analysis successfully written to: {OUTPUT_FILE}")
-    print(f"--- Baseline Performance Metrics ---")
-    print(f"Total Consumption: {total_kwh:.2f} kWh")
-    print(f"Total Grid Cost:   ${total_cost:.2f}")
     print(f"\nData Preview:")
     print(analysis_df.head(4).to_string(index=False))
 
@@ -44,6 +38,25 @@ def calculate_baseline(df, analysis_df):
     analysis_df['baseline_import_wh'] = (df['consumed_wh'] - df['stored_wh']).clip(lower=0)
     analysis_df['baseline_cost'] = (analysis_df['baseline_import_wh'] / 1000.0) * df['import_rate']
     analysis_df['baseline_cost'] = analysis_df['baseline_cost'].round(4)
+
+    peak_mask = analysis_df['is_peak'] == True
+    off_peak_mask = analysis_df['is_peak'] == False
+    
+    total_kwh = analysis_df['baseline_import_wh'].sum() / 1000.0
+    peak_kwh = analysis_df.loc[peak_mask, 'baseline_import_wh'].sum() / 1000.0
+    off_peak_kwh = analysis_df.loc[off_peak_mask, 'baseline_import_wh'].sum() / 1000.0
+    
+    total_cost = analysis_df['baseline_cost'].sum()
+    peak_cost = analysis_df.loc[peak_mask, 'baseline_cost'].sum()
+    off_peak_cost = analysis_df.loc[off_peak_mask, 'baseline_cost'].sum()
+    
+    print(f"\n==============================================")
+    print(f"       BASELINE PERFORMANCE METRICS           ")
+    print(f"==============================================")
+    print(f"Total Consumption : {total_kwh:10.2f} kWh  |  Cost: ${total_cost:8.2f}")
+    print(f"  └─ Peak         : {peak_kwh:10.2f} kWh  |  Cost: ${peak_cost:8.2f}")
+    print(f"  └─ Off-Peak     : {off_peak_kwh:10.2f} kWh  |  Cost: ${off_peak_cost:8.2f}")
+    print(f"==============================================")
 
     return analysis_df
 
