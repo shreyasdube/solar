@@ -23,6 +23,7 @@ def run_financial_analysis():
     analysis_df['export_rate'] = df['export_rate']
 
     analysis_df = calculate_baseline(df, analysis_df)
+    analysis_df = calculate_solar_only(df, analysis_df)
     analysis_df = calculate_solar_battery(df, analysis_df)
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
@@ -55,6 +56,68 @@ def calculate_baseline(df, analysis_df):
 
     return analysis_df
 
+
+def calculate_solar_only(df, analysis_df):
+    """
+    Calculates performance as if the home had solar panels but NO battery storage.
+    """
+    solar_generation = df['produced_wh']
+    house_demand = df['consumed_wh'] - df['stored_wh'] + df['discharged_wh']
+    simulated_imports = (house_demand - solar_generation).clip(lower=0)
+    simulated_exports = (solar_generation - house_demand).clip(lower=0)
+
+    analysis_df['solar_only_import_kwh'] = (simulated_imports / 1000.0).round(4)
+    analysis_df['solar_only_export_kwh'] = (simulated_exports / 1000.0).round(4)
+    analysis_df['solar_only_net_kwh'] = (analysis_df['solar_only_import_kwh'] - analysis_df['solar_only_export_kwh']).round(4)
+
+    analysis_df['solar_only_import_cost'] = (analysis_df['solar_only_import_kwh'] * df['import_rate']).round(4)
+    analysis_df['solar_only_export_cost'] = (analysis_df['solar_only_export_kwh'] * df['export_rate']).round(4)
+    analysis_df['solar_only_net_cost'] = (analysis_df['solar_only_import_cost'] - analysis_df['solar_only_export_cost']).round(4)
+
+    cols_to_sum = [
+        'solar_only_import_kwh', 'solar_only_export_kwh', 'solar_only_net_kwh',
+        'solar_only_import_cost', 'solar_only_export_cost', 'solar_only_net_cost'
+    ]
+    months = pd.to_datetime(analysis_df['timestamp']).dt.strftime('%b %Y')
+    summary = analysis_df.groupby([months, 'is_peak'])[cols_to_sum].sum()
+
+    print(f"\n=======================================================")
+    print(f"         SIMULATED SOLAR-ONLY PERFORMANCE METRICS      ")
+    print(f"=======================================================")
+    for month in summary.index.get_level_values(0).unique():
+        p_import_kwh  = summary.loc[(month, True), 'solar_only_import_kwh']
+        p_export_kwh  = summary.loc[(month, True), 'solar_only_export_kwh']
+        p_net_kwh     = summary.loc[(month, True), 'solar_only_net_kwh']
+        p_import_cost = summary.loc[(month, True), 'solar_only_import_cost']
+        p_export_cost = summary.loc[(month, True), 'solar_only_export_cost']
+        p_net_cost    = summary.loc[(month, True), 'solar_only_net_cost']
+
+        # Extracted off-peak print variables
+        op_import_kwh  = summary.loc[(month, False), 'solar_only_import_kwh']
+        op_export_kwh  = summary.loc[(month, False), 'solar_only_export_kwh']
+        op_net_kwh     = summary.loc[(month, False), 'solar_only_net_kwh']
+        op_import_cost = summary.loc[(month, False), 'solar_only_import_cost']
+        op_export_cost = summary.loc[(month, False), 'solar_only_export_cost']
+        op_net_cost    = summary.loc[(month, False), 'solar_only_net_cost']
+
+        # Calculate high level totals
+        total_net_kwh = p_net_kwh + op_net_kwh
+        total_net_cost = p_net_cost + op_net_cost
+
+        print(f"{month}:")
+        print(f"   Total Net Summary : {total_net_kwh:10.2f} kWh  |  Net Bill: ${total_net_cost:7.2f}")
+        print(f"     ├─ [PEAK WINDOW]")
+        print(f"     │    ├── Import : {p_import_kwh:10.2f} kWh  |  Cost  : ${p_import_cost:7.2f}")
+        print(f"     │    ├── Export : {p_export_kwh:10.2f} kWh  |  Credit: ${p_export_cost:7.2f}")
+        print(f"     │    └── Net    : {p_net_kwh:10.2f} kWh  |  Net   : ${p_net_cost:7.2f}")
+        print(f"     └─ [OFF-PEAK WINDOW]")
+        print(f"     │    ├── Import : {op_import_kwh:10.2f} kWh  |  Cost  : ${op_import_cost:7.2f}")
+        print(f"     │    ├── Export : {op_export_kwh:10.2f} kWh  |  Credit: ${op_export_cost:7.2f}")
+        print(f"     │    └── Net    : {op_net_kwh:10.2f} kWh  |  Net   : ${op_net_cost:7.2f}")
+        print(f"-------------------------------------------------------")
+
+    return analysis_df
+    
 
 def calculate_solar_battery(df, analysis_df):
     """
