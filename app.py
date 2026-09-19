@@ -73,23 +73,22 @@ payback_solar = 22000.0 / savings_solar if savings_solar > 0 else 0.0
 payback_battery = 18000.0 / savings_battery if savings_battery > 0 else 0.0
 payback_solar_battery = 40000.0 / savings_solar_battery if savings_solar_battery > 0 else 0.0
 
-st.markdown("#### ☀️ Solar Only Track")
-r1_c1, r1_col2, r1_col3 = st.columns(3)
-r1_c1.metric("Net Upfront Investment", "$22,000.00")
-r1_col2.metric("Annualized Financial Return", f"${savings_solar:,.2f}")
-r1_col3.metric("Estimated Payback Window", f"{payback_solar:.1f} Years" if payback_solar else "No Payback")
-
-st.markdown("#### 🔋 Battery Only Track")
-r2_c1, r2_col2, r2_col3 = st.columns(3)
-r2_c1.metric("Net Upfront Investment", "$18,000.00")
-r2_col2.metric("Annualized Financial Return", f"${savings_battery:,.2f}")
-r2_col3.metric("Estimated Payback Window", f"{payback_battery:.1f} Years" if payback_battery else "No Payback")
-
-st.markdown("#### ⚡ Solar + Battery Combination")
-r3_c1, r3_col2, r3_col3 = st.columns(3)
-r3_c1.metric("Net Upfront Investment", "$40,000.00")
-r3_col2.metric("Annualized Financial Return", f"${savings_solar_battery:,.2f}")
-r3_col3.metric("Estimated Payback Window", f"{payback_solar_battery:.1f} Years" if payback_solar_battery else "No Payback")
+track_col1, track_col2, track_col3 = st.columns(3)
+with track_col1:
+    st.markdown("#### ☀️ Solar Only Track"
+    st.metric("Net Upfront Cost", "$22,000.00")
+    st.metric("Annualized Return", f"${savings_solar:,.2f}")
+    st.metric("Payback Window", f"{payback_solar:.1f} Years" if payback_solar else "No Payback")
+with track_col2:
+    st.markdown("#### 🔋 Battery Only Track")
+    st.metric("Net Upfront Cost", "$18,000.00")
+    st.metric("Annualized Return", f"${savings_battery:,.2f}")
+    st.metric("Payback Window", f"{payback_battery:.1f} Years" if payback_battery else "No Payback")
+with track_col3:
+    st.markdown("#### ⚡ Solar + Battery Combo")
+    st.metric("Net Upfront Cost", "$40,000.00")
+    st.metric("Annualized Return", f"${savings_solar_battery:,.2f}")
+    st.metric("Payback Window", f"{payback_solar_battery:.1f} Years"
 
 st.divider()
 st.subheader("📜 Solar Renewable Energy Certificates (SREC) Ledger")
