@@ -54,8 +54,9 @@ battery_cost_input = st.sidebar.number_input(
 # Derived Combined Threshold
 solar_battery_cost_input = solar_cost_input + battery_cost_input
 
-# 3. Process Monthly Utility Cost Streams
-months = df['timestamp'].dt.strftime('%b %Y')
+# 3. Process Monthly Utility Cost Streams Chronologically
+# Use Sortable Period objects (YYYY-MM) instead of string formatting to maintain date structure
+df['year_month'] = df['timestamp'].dt.to_period('M')
 
 cost_columns = {
     'baseline_cost': 'Baseline ($)',
@@ -65,15 +66,17 @@ cost_columns = {
 }
 
 # Group and aggregate data into unique chronological month rows
-monthly_costs = df.groupby(months)[list(cost_columns.keys())].sum()
-monthly_costs = monthly_costs.reindex(months.unique())
-monthly_costs = monthly_costs.rename(columns=cost_columns)
+monthly_costs = df.groupby('year_month')[list(cost_columns.keys())].sum()
+monthly_costs = monthly_costs.sort_index()  # Guarantees strict chronological sorting
 
-# Calculate Global Full-Year Cumulative Totals
-base_total = monthly_costs['Baseline ($)'].sum()
-solar_total = monthly_costs['Solar Only ($)'].sum()
-battery_total = monthly_costs['Battery Only ($)'].sum()
-solar_battery_total = monthly_costs['Solar + Battery ($)'].sum()
+# Calculate Global Full-Year Cumulative Totals from the clean sorted framework
+base_total = monthly_costs['baseline_cost'].sum()
+solar_total = monthly_costs['solar_only_net_cost'].sum()
+battery_total = monthly_costs['battery_only_import_cost'].sum()
+solar_battery_total = monthly_costs['solar_battery_net_cost'].sum()
+
+# Rename columns to user-friendly titles
+monthly_costs = monthly_costs.rename(columns=cost_columns)
 
 # Compute Comparative Efficiency Delta Percentages vs Baseline Benchmark
 solar_pct_diff = ((solar_total - base_total) / base_total) * 100 if base_total else 0
@@ -152,26 +155,34 @@ st.divider()
 st.subheader("📉 Investment Payback Burndown")
 st.markdown("Track the real-time path to breaking even. This maps monthly utility savings and exact SREC payout dates against your custom setup cost.")
 
-# Create an accurate month-by-month framework from the existing monthly_costs index
-burndown_df = pd.DataFrame(index=monthly_costs.index)
+# Build matching dataframe mapped chronologically on true monthly periods
+burndown_periods = df['timestamp'].dt.to_period('M').unique()
+burndown_periods = sorted(burndown_periods)
 
-# Calculate monthly operational bill savings vs Baseline
-burndown_df['Utility Savings'] = monthly_costs['Baseline ($)'] - monthly_costs['Solar + Battery ($)']
+# Convert period objects back to structured chronological display index strings
+chronological_index = [p.strftime('%b %Y') for p in burndown_periods]
+burndown_df = pd.DataFrame(index=chronological_index)
 
-# Match and group actual SREC cash history events onto the timeline index
-srec_monthly = srec_df.groupby(srec_df['date'].dt.strftime('%b %Y'))['total_sales'].sum()
+# 1. Calculate monthly operational savings using sorted metrics
+burndown_df['Utility Savings'] = monthly_costs['Baseline ($)'] - monthly_costs['Solar + Battery ($)'].values
+
+# 2. Match exact SREC ledger entries chronologically
+srec_monthly = srec_df.groupby(srec_df['date'].dt.to_period('M'))['total_sales'].sum()
+srec_monthly.index = srec_monthly.index.strftime('%b %Y')
+
 burndown_df['SREC Revenue'] = srec_monthly.reindex(burndown_df.index, fill_value=0.0)
 
-# Calculate total monthly recovery yields
+# 3. Calculate running recovery trajectory pools
 burndown_df['Total Monthly Recovery'] = burndown_df['Utility Savings'] + burndown_df['SREC Revenue']
-
-# Build the burndown trajectory: Upfront Cost - Cumulative recovery values
 burndown_df['Unrecovered Balance ($)'] = solar_battery_cost_input - burndown_df['Total Monthly Recovery'].cumsum()
 
-# Render the interactive line chart tracing the asset balance decay curve
+# Plot the clean, non-sawtooth investment decay curve
 st.line_chart(burndown_df[['Unrecovered Balance ($)']], height=300)
 
 st.divider()
+
+# Convert the master table display series index to display strings (e.g. "Jan 2025")
+monthly_costs.index = [p.strftime('%b %Y') for p in monthly_costs.index]
 
 # 7. Render SREC Ledger Visualization Row
 st.subheader("📜 Solar Renewable Energy Certificates (SREC) Ledger")
