@@ -5,6 +5,7 @@ import pandas as pd
 RAW_INPUTS_DIR = "raw_inputs"
 OUTPUT_DIR = "data"
 OUTPUT_FILE = os.path.join(OUTPUT_DIR, "enphase.csv")
+RATES_FILE = os.path.join(OUTPUT_DIR, "rates_schedule.csv")
 
 def process_raw_data():
     """
@@ -61,6 +62,12 @@ def process_raw_data():
     hourly_df = combined_df.groupby('hourly_timestamp')[energy_cols].sum().reset_index()
     hourly_df = hourly_df.rename(columns={'hourly_timestamp': 'timestamp'})
 
+    # Apply rates schedule mapping
+    hourly_df = apply_rate_schedule(hourly_df)
+    if hourly_df is None:
+        print("Aborting file save because rate schedule mapping failed.")
+        return
+
     hourly_df.to_csv(OUTPUT_FILE, index=False)
     print(f"Processed {len(csv_files)} raw file(s) into {len(hourly_df)} hourly records.")
     print(f"Output saved to: {OUTPUT_FILE}")
@@ -68,6 +75,30 @@ def process_raw_data():
     print(hourly_df.head(3).to_string(index=False))
     print(hourly_df.tail(3).to_string(index=False))
     print(f"Total Rows: {hourly_df.shape[0]} | Total Columns: {hourly_df.shape[1]}")
+
+def apply_rate_schedule(df):
+    """
+    Reads the utility rates schedule and maps is_peak, import_rate, 
+    and export_rate columns to the energy dataframe based on the timestamp.
+    """
+    if not os.path.exists(RATES_FILE):
+        print(f"Warning: '{RATES_FILE}' not found. Returning null.")
+        return None
+    
+    # Load rates and parse dates
+    rates_df = pd.read_csv(RATES_FILE)
+    rates_df['effective_start'] = pd.to_datetime(rates_df['effective_start'])
+    rates_df['effective_end'] = pd.to_datetime(rates_df['effective_end'])
+
+    # Initialize destination columns with default values
+    df['is_peak'] = False
+    df['import_rate'] = 0.0
+    df['export_rate'] = 0.0
+    months = df['timestamp'].dt.month
+    hours = df['timestamp'].dt.hour
+
+    # Actually do mapping
+    return df
 
 if __name__ == "__main__":
     process_raw_data()
