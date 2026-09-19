@@ -60,14 +60,15 @@ def calculate_baseline(df, analysis_df):
 def calculate_solar_only(df, analysis_df):
     """
     Calculates performance as if the home had solar panels but NO battery storage.
+    Formula: Net Balance = Baseline Demand (House Demand) - Solar Production
     """
-    solar_generation = df['produced_wh']
-    house_demand = df['consumed_wh'] - df['stored_wh'] + df['discharged_wh']
-    simulated_imports = (house_demand - solar_generation).clip(lower=0)
-    simulated_exports = (solar_generation - house_demand).clip(lower=0)
+    house_demand_wh = analysis_df['baseline_import_kwh'] * 1000.0
+    solar_generation_wh = df['produced_wh']
+    simulated_imports_wh = (house_demand_wh - solar_generation_wh).clip(lower=0)
+    simulated_exports_wh = (solar_generation_wh - house_demand_wh).clip(lower=0)
 
-    analysis_df['solar_only_import_kwh'] = (simulated_imports / 1000.0).round(4)
-    analysis_df['solar_only_export_kwh'] = (simulated_exports / 1000.0).round(4)
+    analysis_df['solar_only_import_kwh'] = (simulated_imports_wh / 1000.0).round(4)
+    analysis_df['solar_only_export_kwh'] = (simulated_exports_wh / 1000.0).round(4)
     analysis_df['solar_only_net_kwh'] = (analysis_df['solar_only_import_kwh'] - analysis_df['solar_only_export_kwh']).round(4)
 
     analysis_df['solar_only_import_cost'] = (analysis_df['solar_only_import_kwh'] * df['import_rate']).round(4)
@@ -92,7 +93,6 @@ def calculate_solar_only(df, analysis_df):
         p_export_cost = summary.loc[(month, True), 'solar_only_export_cost']
         p_net_cost    = summary.loc[(month, True), 'solar_only_net_cost']
 
-        # Extracted off-peak print variables
         op_import_kwh  = summary.loc[(month, False), 'solar_only_import_kwh']
         op_export_kwh  = summary.loc[(month, False), 'solar_only_export_kwh']
         op_net_kwh     = summary.loc[(month, False), 'solar_only_net_kwh']
@@ -100,7 +100,6 @@ def calculate_solar_only(df, analysis_df):
         op_export_cost = summary.loc[(month, False), 'solar_only_export_cost']
         op_net_cost    = summary.loc[(month, False), 'solar_only_net_cost']
 
-        # Calculate high level totals
         total_net_kwh = p_net_kwh + op_net_kwh
         total_net_cost = p_net_cost + op_net_cost
 
