@@ -53,6 +53,6 @@ else:
 
     st.divider()
 
-    st.subheader("📈 Monthly Cost Trajectory")
-    st.markdown("Track and compare how your utility bills fluctuate over time across each setup.")
-    st.line_chart(monthly_costs, height=400)
+    st.subheader("📊 Configuration Savings Comparison")
+    st.bar_chart(monthly_costs, height=350)
+
