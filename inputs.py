@@ -97,7 +97,23 @@ def apply_rate_schedule(df):
     months = df['timestamp'].dt.month
     hours = df['timestamp'].dt.hour
 
-    # Actually do mapping
+    # Iterate over each row in the rate schedule to apply matching rules
+    for _, rule in rates_df.iterrows():
+        # 1. Match overall date range and season months
+        date_mask = df['timestamp'].between(rule['effective_start'], rule['effective_end'])
+        month_mask = months.between(rule['start_month'], rule['end_month']) if rule['start_month'] <= rule['end_month'] else (months >= rule['start_month']) | (months <= rule['end_month'])
+        rule_mask = date_mask & month_mask
+        
+        if not rule_mask.any():
+            continue
+
+        # 2. Set default Off-Peak values for the matching season window
+        df.loc[rule_mask, ['is_peak', 'import_rate', 'export_rate']] = [False, rule['import_off_peak'], rule['export_off_peak']]
+
+        # 3. Overwrite just the Peak hours within that window
+        peak_mask = rule_mask & hours.between(rule['peak_start_hour'], rule['peak_end_hour'], inclusive='left')
+        df.loc[peak_mask, ['is_peak', 'import_rate', 'export_rate']] = [True, rule['import_on_peak'], rule['export_on_peak']]
+
     return df
 
 if __name__ == "__main__":
