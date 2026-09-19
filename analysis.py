@@ -62,28 +62,41 @@ def calculate_solar_battery(df, analysis_df):
     Calculates the real-world financial performance of your combined Solar + Battery setup.
     Formula: Net Cost = (Imported Energy Cost) - (Exported Solar Credits)
     """
-    actual_import_cost = (df['imported_wh'] / 1000.0) * df['import_rate']
-    actual_export_credit = (df['exported_wh'] / 1000.0) * df['export_rate']
+    analysis_df['solar_battery_import_kwh'] = (df['imported_wh'] / 1000.0).round(4)
+    analysis_df['solar_battery_export_kwh'] = (df['exported_wh'] / 1000.0).round(4)
+    analysis_df['solar_battery_net_kwh'] = (analysis_df['solar_battery_import_kwh'] - analysis_df['solar_battery_export_kwh']).round(4)
     
-    analysis_df['net_import_wh'] = df['imported_wh'] - df['exported_wh']
-    analysis_df['net_cost'] = (actual_import_cost - actual_export_credit).round(4)
+    analysis_df['solar_battery_import_cost'] = (analysis_df['solar_battery_import_kwh'] * df['import_rate']).round(4)
+    analysis_df['solar_battery_export_cost'] = (analysis_df['solar_battery_export_kwh'] * df['export_rate']).round(4)
+    analysis_df['solar_battery_net_cost'] = (analysis_df['solar_battery_import_cost'] - analysis_df['solar_battery_export_cost']).round(4)
 
-    cols_to_sum = ['net_import_wh', 'net_cost']
+    cols_to_sum = [
+        'solar_battery_import_kwh', 'solar_battery_export_kwh', 'solar_battery_net_kwh',
+        'solar_battery_import_cost', 'solar_battery_export_cost', 'solar_battery_net_cost'
+    ]
     months = pd.to_datetime(analysis_df['timestamp']).dt.strftime('%b %Y')
-    summary = analysis_df.groupby([months, 'is_peak'])[cols_to_sum].sum() / [1000.0, 1.0]
+    summary = analysis_df.groupby([months, 'is_peak'])[cols_to_sum].sum()
 
     print(f"\n==============================================")
-    print(f"    ACTUAL SOLAR+BATTERY PERFORMANCE METRICS  ")
+    print(f"       SOLAR+BATTERY PERFORMANCE METRICS  ")
     print(f"==============================================")
     for month in summary.index.get_level_values(0).unique():
-        total_cost = summary.loc[month, 'net_cost'].sum()
-        peak_cost = summary.loc[(month, True), 'net_cost']
-        off_peak_cost = summary.loc[(month, False), 'net_cost']
+        p_row = summary.loc[(month, True)]
+        op_row = summary.loc[(month, False)]
+        
+        total_net_kwh = summary.loc[month, 'solar_battery_net_kwh'].sum()
+        total_net_cost = summary.loc[month, 'solar_battery_net_cost'].sum()
 
-        print(f"{month}:")
-        print(f"   Total Net    : {summary.loc[month, 'net_import_wh'].sum():10.2f} kWh  |  Net: ${total_cost:7.2f}")
-        print(f"     └─ Peak    : {summary.loc[(month, True), 'net_import_wh']:10.2f} kWh  |  Net: ${peak_cost:7.2f}")
-        print(f"     └─ Off-Peak: {summary.loc[(month, False), 'net_import_wh']:10.2f} kWh  |  Net: ${off_peak_cost:7.2f}")
+        print(f"📊 {month}:")
+        print(f"   Total Net Summary : {total_net_kwh:10.2f} kWh  |  Net Bill: ${total_net_cost:7.2f}")
+        print(f"     ├─ [PEAK WINDOW]")
+        print(f"     │    ├── Import : {p_row['solar_battery_import_kwh']:10.2f} kWh  |  Cost  : ${p_row['solar_battery_import_cost']:7.2f}")
+        print(f"     │    ├── Export : {p_row['solar_battery_export_kwh']:10.2f} kWh  |  Credit: ${p_row['solar_battery_export_cost']:7.2f}")
+        print(f"     │    └── Net    : {p_row['solar_battery_net_kwh']:10.2f} kWh  |  Net   : ${p_row['solar_battery_net_cost']:7.2f}")
+        print(f"     └─ [OFF-PEAK WINDOW]")
+        print(f"     │    ├── Import : {op_row['solar_battery_import_kwh']:10.2f} kWh  |  Cost  : ${op_row['solar_battery_import_cost']:7.2f}")
+        print(f"     │    ├── Export : {op_row['solar_battery_export_kwh']:10.2f} kWh  |  Credit: ${op_row['solar_battery_export_cost']:7.2f}")
+        print(f"     │    └── Net    : {op_row['solar_battery_net_kwh']:10.2f} kWh  |  Net   : ${op_row['solar_battery_net_cost']:7.2f}")
         print(f"-------------------------------------------------------")
 
     return analysis_df
