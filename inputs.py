@@ -39,11 +39,6 @@ def process_raw_data():
                 if keyword in c.lower()
             }
             temp_df = temp_df.rename(columns=col_map)
-
-            print(temp_df.columns.tolist())
-            print(temp_df[['timestamp', 'produced_wh', 'consumed_wh']].head())
-            print(temp_df.info())
-
             frames.append(temp_df)
         except Exception as e: 
             print(f"Error processing {filepath}: {e}")
