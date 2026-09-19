@@ -100,7 +100,7 @@ total_lifetime_srec = srec_df['total_sales'].sum()
 
 # 6. Render Investment & Payback Analysis Track Metrics (ROI)
 st.subheader("💰 Investment & Payback Analysis (ROI)")
-st.markdown(f"Based on custom upfront system costs: **${solar_cost_input:,.2f} for Solar** and **${battery_cost_input:,.2f} for Batteries**. *(Includes **${annual_srec_income:.2f}** in 2025 SREC Cash Revenue)*")
+st.markdown(f"Based on custom upfront system costs: **\${solar_cost_input:,.2f} for Solar** and **\${battery_cost_input:,.2f} for Batteries**. *(Includes **\${annual_srec_income:.2f}** in 2025 SREC Cash Revenue)*")
 
 # Calculate net asset economics by factoring in bill reductions and SREC earnings splits
 savings_solar = (base_total - solar_total) + annual_srec_income
