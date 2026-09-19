@@ -39,8 +39,9 @@ def calculate_baseline(df, analysis_df):
     analysis_df['baseline_cost'] = (analysis_df['baseline_import_wh'] / 1000.0) * df['import_rate']
     analysis_df['baseline_cost'] = analysis_df['baseline_cost'].round(4)
 
+    cols_to_sum = ['baseline_import_wh', 'baseline_cost']
     months = pd.to_datetime(analysis_df['timestamp']).dt.strftime('%b %Y')
-    summary = analysis_df.groupby([months, 'is_peak']).sum(numeric_only=True) / [1000.0, 1.0]
+    summary = analysis_df.groupby([months, 'is_peak'])[cols_to_sum].sum() / [1000.0, 1.0]
 
     print(f"\n==============================================")
     print(f"       BASELINE PERFORMANCE METRICS           ")
