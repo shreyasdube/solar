@@ -39,24 +39,18 @@ def calculate_baseline(df, analysis_df):
     analysis_df['baseline_cost'] = (analysis_df['baseline_import_wh'] / 1000.0) * df['import_rate']
     analysis_df['baseline_cost'] = analysis_df['baseline_cost'].round(4)
 
-    peak_mask = analysis_df['is_peak'] == True
-    off_peak_mask = analysis_df['is_peak'] == False
-    
-    total_kwh = analysis_df['baseline_import_wh'].sum() / 1000.0
-    peak_kwh = analysis_df.loc[peak_mask, 'baseline_import_wh'].sum() / 1000.0
-    off_peak_kwh = analysis_df.loc[off_peak_mask, 'baseline_import_wh'].sum() / 1000.0
-    
-    total_cost = analysis_df['baseline_cost'].sum()
-    peak_cost = analysis_df.loc[peak_mask, 'baseline_cost'].sum()
-    off_peak_cost = analysis_df.loc[off_peak_mask, 'baseline_cost'].sum()
-    
+    months = pd.to_datetime(analysis_df['timestamp']).dt.strftime('%b %Y')
+    summary = analysis_df.groupby([months, 'is_peak']).sum(numeric_only=True) / [1000.0, 1.0]
+
     print(f"\n==============================================")
     print(f"       BASELINE PERFORMANCE METRICS           ")
     print(f"==============================================")
-    print(f"Total Consumption : {total_kwh:10.2f} kWh  |  Cost: ${total_cost:8.2f}")
-    print(f"  └─ Peak         : {peak_kwh:10.2f} kWh  |  Cost: ${peak_cost:8.2f}")
-    print(f"  └─ Off-Peak     : {off_peak_kwh:10.2f} kWh  |  Cost: ${off_peak_cost:8.2f}")
-    print(f"==============================================")
+    for month in summary.index.get_level_values(0).unique():
+        print(f"{month}:")
+        print(f"   Total Cost   : {summary.loc[month, 'baseline_import_wh'].sum():10.2f} kWh  |  Cost: ${summary.loc[month, 'baseline_cost'].sum():8.2f}")
+        print(f"     └─ Peak    : {summary.loc[(month, True), 'baseline_import_wh']:10.2f} kWh  |  Cost: ${summary.loc[(month, True), 'baseline_cost']:7.2f}")
+        print(f"     └─ Off-Peak: {summary.loc[(month, False), 'baseline_import_wh']:10.2f} kWh  |  Cost: ${summary.loc[(month, False), 'baseline_cost']:7.2f}")
+        print(f"-------------------------------------------------------")
 
     return analysis_df
 
